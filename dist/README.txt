@@ -55,7 +55,8 @@ GOOD TO KNOW
 UPDATES
   The app checks once a day for a new version of itself (one small request to GitHub)
   and of Equalizer APO (one to SourceForge). App updates are offered
-  it on the Overview tab and in the tray menu; one click installs it. New versions are
+  on the Overview tab and in the tray menu; one click installs them. For Equalizer APO
+  you get a download link (it needs admin rights and a restart, so it isn't automatic). New versions are
   built automatically whenever toppingctl changes, and only released after every DAC
   command has been checked byte-for-byte against toppingctl. Turn the check off on the
   Overview tab if you prefer. Releases: https://github.com/ZN98/dac-eq-switcher/releases
