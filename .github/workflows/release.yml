@@ -30,7 +30,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -61,11 +61,12 @@ jobs:
         run: |
           version="$(cat VERSION).${{ github.run_number }}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          sh build.sh ../toppingctl "$version"
+          sh build.sh ../toppingctl "$version" > build.log 2>&1 || { cat build.log; tail -15 build.log | sed 's/^/::error::/'; exit 1; }
+          cat build.log
 
       - name: Check every frame against toppingctl
         if: steps.tc.outputs.go == 'true'
-        run: sh ci/check.sh ../toppingctl
+        run: sh ci/check.sh ../toppingctl > check.log 2>&1 || { cat check.log; tail -15 check.log | sed 's/^/::error::/'; exit 1; }; cat check.log
 
       - name: Publish release
         if: steps.tc.outputs.go == 'true'

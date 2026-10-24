@@ -14,10 +14,10 @@ cat > src/Version.g.cs <<CS
 [assembly: System.Reflection.AssemblyFileVersion("$VERSION.0")]
 [assembly: System.Reflection.AssemblyInformationalVersion("$VERSION (toppingctl ${REV%"${REV#???????}"})")]
 CS
-python3 tools/make_icon.py build/app.ico
+ICON=assets/app.ico   # regenerate with tools/make_icon.py (needs Pillow) if you change the design
 REF=/usr/lib/mono/4.8-api
 mcs -nologo -target:winexe -platform:anycpu -optimize+ -langversion:7 -nostdlib -warnaserror- \
     -r:$REF/mscorlib.dll -r:$REF/System.dll -r:$REF/System.Core.dll -r:$REF/System.Drawing.dll \
     -r:$REF/System.Windows.Forms.dll -r:$REF/System.Runtime.Serialization.dll -r:$REF/System.Xml.dll \
-    -win32icon:build/app.ico -out:build/DacEqSwitcher.exe src/*.cs
+    -win32icon:$ICON -out:build/DacEqSwitcher.exe src/*.cs
 echo "built build/DacEqSwitcher.exe $VERSION (toppingctl $REV)"
