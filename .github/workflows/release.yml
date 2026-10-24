@@ -1,0 +1,124 @@
+name: Track toppingctl and release
+
+# Daily: if toppingctl has changed, rebuild against it, prove every frame the app sends
+# is still byte-identical to toppingctl's own, and publish a release the app can update to.
+# If the proof fails, nothing is released and an issue is opened instead.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even if toppingctl hasn't changed"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["src/**", "tools/**", "test/**", "ci/**", "build.sh", "VERSION", "dist/**"]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the latest toppingctl
+        id: tc
+        run: |
+          git clone --quiet https://github.com/gjcourt/toppingctl.git ../toppingctl
+          rev=$(git -C ../toppingctl rev-parse HEAD)
+          last=$(cat toppingctl.rev 2>/dev/null || true)
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          echo "short=${rev:0:7}" >> "$GITHUB_OUTPUT"
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          if [ "$rev" != "$last" ] || [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "toppingctl unchanged ($rev); nothing to do."
+          fi
+
+      - name: Install Mono
+        if: steps.tc.outputs.go == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q mono-complete
+
+      - name: Build
+        if: steps.tc.outputs.go == 'true'
+        id: build
+        run: |
+          version="$(cat VERSION).${{ github.run_number }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          sh build.sh ../toppingctl "$version"
+
+      - name: Check every frame against toppingctl
+        if: steps.tc.outputs.go == 'true'
+        run: sh ci/check.sh ../toppingctl
+
+      - name: Publish release
+        if: steps.tc.outputs.go == 'true'
+        run: |
+          v="${{ steps.build.outputs.version }}"
+          rev="${{ steps.tc.outputs.rev }}"; last="${{ steps.tc.outputs.last }}"
+          mkdir -p out
+          cp build/DacEqSwitcher.exe dist/README.txt out/
+          cp ../toppingctl/LICENSE out/toppingctl-LICENSE.txt
+          (cd out && zip -q DacEqSwitcher.zip DacEqSwitcher.exe README.txt toppingctl-LICENSE.txt)
+          {
+            echo "Built against toppingctl \`${rev:0:7}\` ($(git -C ../toppingctl log -1 --format=%cs))."
+            echo
+            if [ -n "$last" ] && [ "$last" != "$rev" ] && git -C ../toppingctl cat-file -e "$last" 2>/dev/null; then
+              echo "toppingctl changes since the previous build:"
+              git -C ../toppingctl log --format='- %s' "$last..$rev" | head -40
+              echo
+            fi
+            echo "Every command frame was checked byte-for-byte against toppingctl's own builders before release."
+            echo
+            echo "Installed copies update themselves (Overview tab or tray menu). New install: download DacEqSwitcher.zip."
+          } > notes.md
+          gh release create "v$v" out/DacEqSwitcher.exe out/DacEqSwitcher.zip \
+            --title "DAC EQ Switcher $v" --notes-file notes.md
+
+      - name: Record the toppingctl revision
+        if: steps.tc.outputs.go == 'true'
+        run: |
+          echo "${{ steps.tc.outputs.rev }}" > toppingctl.rev
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add toppingctl.rev src/ToppingTables.g.cs
+          git commit -m "Track toppingctl ${{ steps.tc.outputs.short }}" || exit 0
+          git push
+
+      - name: Report a toppingctl change that needs porting
+        if: failure() && steps.tc.outputs.go == 'true'
+        run: |
+          title="toppingctl ${{ steps.tc.outputs.short }}: build or frame check failed, release held back"
+          if [ -z "$(gh issue list --state open --search "in:title release held back" --json number --jq '.[0].number')" ]; then
+            gh issue create --title "$title" --body "The daily build against toppingctl \`${{ steps.tc.outputs.rev }}\` failed, so no release was published and installed copies stay on the last good version.
+
+          Most likely toppingctl changed a command or table the app ports by hand. Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+      # GitHub pauses scheduled workflows after 60 days without repository activity.
+      - name: Keep the schedule alive
+        if: always()
+        run: |
+          age=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          if [ "$age" -gt 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keep the daily toppingctl check scheduled"
+            git push
+          fi

@@ -1,0 +1,9 @@
+DAC EQ Switcher
+Copyright 2026 ZN98
+
+This product includes data and protocol logic derived from toppingctl
+(https://github.com/gjcourt/toppingctl), Copyright George Courtsunis,
+licensed under the Apache License, Version 2.0. src/ToppingTables.g.cs is
+generated from toppingctl's source by tools/gen_tables.py.
+
+Not affiliated with or endorsed by Topping.
