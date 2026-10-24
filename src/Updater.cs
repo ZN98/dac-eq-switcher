@@ -54,8 +54,24 @@ namespace DacEqSwitcher
             [DataMember(Name = "assets")] public List<GhAsset> Assets;
         }
 
+        [DataContract] sealed class SfFile { [DataMember(Name = "filename")] public string Filename; }
+        [DataContract] sealed class SfPlatforms { [DataMember(Name = "windows")] public SfFile Windows; }
+        [DataContract] sealed class SfBest
+        {
+            [DataMember(Name = "release")] public SfFile Release;
+            [DataMember(Name = "platform_releases")] public SfPlatforms Platforms;
+        }
+
+        public const string EapoPage = "https://sourceforge.net/projects/equalizerapo/files/";
+        readonly Func<string> eapoInstallDir;
+
+        public Updater(Func<string> eapoInstallDir) { this.eapoInstallDir = eapoInstallDir; }
+
         Timer timer;
         public Release Available { get; private set; }
+        /// Set when a newer Equalizer APO than the installed one has been released.
+        public Version EapoLatest { get; private set; }
+        public Version EapoInstalled { get; private set; }
         public event Action Changed;
 
         static Updater()
@@ -84,6 +100,7 @@ namespace DacEqSwitcher
 
         void Check()
         {
+            CheckEapo();
             try
             {
                 var r = Latest();
@@ -98,11 +115,54 @@ namespace DacEqSwitcher
             catch (Exception ex) { Log.Write("update check: " + ex.Message); }
         }
 
+        /// Equalizer APO isn't bundled (it needs admin rights and a restart to install), so the
+        /// app only tells you when a newer version is out.
+        void CheckEapo()
+        {
+            try
+            {
+                Version installed = null;
+                string dir = eapoInstallDir();
+                foreach (var f in new[] { "EqualizerAPO.dll", "Editor.exe", "Configurator.exe" })
+                {
+                    string p = Path.Combine(dir ?? "", f);
+                    if (!File.Exists(p)) continue;
+                    var fv = FileVersionInfo.GetVersionInfo(p);
+                    Version v;
+                    if (Version.TryParse((fv.ProductVersion ?? fv.FileVersion ?? "").Split(' ')[0].Replace(',', '.'), out v)) { installed = Norm(v); break; }
+                }
+                if (installed == null) return;
+                string url = Environment.GetEnvironmentVariable("DACEQ_EAPO_URL") ?? "https://sourceforge.net/projects/equalizerapo/best_release.json";
+                SfBest best;
+                using (var resp = Request(url).GetResponse())
+                using (var s = resp.GetResponseStream())
+                    best = (SfBest)new DataContractJsonSerializer(typeof(SfBest)).ReadObject(s);
+                string name = best == null ? null : best.Platforms != null && best.Platforms.Windows != null ? best.Platforms.Windows.Filename
+                            : best.Release != null ? best.Release.Filename : null;
+                var m = name == null ? null : System.Text.RegularExpressions.Regex.Match(name, @"EqualizerAPO[^/]*?-(\d+(?:\.\d+)+)\.exe$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                Version latest;
+                if (m == null || !m.Success || !Version.TryParse(m.Groups[1].Value, out latest)) return;
+                latest = Norm(latest);
+                EapoInstalled = installed;
+                bool newer = latest > installed;
+                if (newer != (EapoLatest != null))
+                {
+                    EapoLatest = newer ? latest : null;
+                    if (newer) Log.Write("Equalizer APO " + latest + " available (installed " + installed + ")");
+                    var h = Changed;
+                    if (h != null) h();
+                }
+            }
+            catch (Exception ex) { Log.Write("Equalizer APO check: " + ex.Message); }
+        }
+
+        static Version Norm(Version v) { return new Version(v.Major, v.Minor, Math.Max(0, v.Build)); }
+
         static HttpWebRequest Request(string url)
         {
             var q = (HttpWebRequest)WebRequest.Create(url);
             q.UserAgent = "DacEqSwitcher/" + Current;
-            q.Accept = "application/vnd.github+json";
+            if (url.Contains("github.com")) q.Accept = "application/vnd.github+json";
             q.Timeout = 20000;
             q.ReadWriteTimeout = 60000;
             return q;

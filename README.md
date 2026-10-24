@@ -27,6 +27,15 @@ same command. Only then is a release published; installed copies pick it up with
 If toppingctl changes something the app ports by hand, the check fails, no release goes out,
 and an issue is opened.
 
+## Everything else it depends on
+
+| Dependency | How it stays current |
+|---|---|
+| toppingctl (DAC support) | Daily build against its latest commit, released only if every frame still matches |
+| .NET Framework 4.8 and Windows USB/HID functions | Part of Windows; kept current by Windows Update |
+| Equalizer APO | Not bundled (installing it needs admin rights and a restart). The app checks SourceForge daily and tells you when a newer version is out |
+| Build tools (Mono, Python, Ubuntu runner) | Installed fresh on GitHub's current Ubuntu image for every build; no third-party GitHub Actions are used |
+
 ## Efficiency
 
 One native 160 KB executable on the .NET Framework built into Windows. While running in

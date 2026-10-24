@@ -21,8 +21,8 @@ namespace DacEqSwitcher
         Button btnPause, btnSetup, btnOthers, btnConfigurator;
         TableLayoutPanel tblState;
         CheckBox chkStartup, chkUpdates;
-        Label lblUpdate;
-        Button btnUpdate;
+        Label lblUpdate, lblEapoUpdate;
+        Button btnUpdate, btnEapoUpdate;
         string stateKey;
         // profiles
         ListBox lstProfiles;
@@ -191,13 +191,18 @@ namespace DacEqSwitcher
             btnOthers = Btn("Turn off the other EQ…", (s, e) => DisableOthers());
             btnConfigurator = Btn("Open Configurator", (s, e) => { try { core.Eapo.OpenConfigurator(); } catch (Exception ex) { Error(ex.Message); } });
             eq.Controls.Add(Row(btnSetup, btnOthers, btnConfigurator));
+            lblEapoUpdate = Wrap(Lbl("", 0, FontStyle.Bold, Color.FromArgb(37, 99, 235)));
+            btnEapoUpdate = Btn("Download", (s, e) => { try { Process.Start(Updater.EapoPage); } catch { } });
+            var eapoUp = Row(lblEapoUpdate, btnEapoUpdate);
+            eapoUp.Margin = new Padding(0, 4, 0, 0);
+            eq.Controls.Add(eapoUp);
             col.Controls.Add(Section("Equalizer APO", eq));
 
             chkStartup = new CheckBox { Text = "Start with Windows (in the notification area)", AutoSize = true, Margin = new Padding(0, 12, 0, 0) };
             chkStartup.Click += (s, e) => app.SetStartup(chkStartup.Checked);
             col.Controls.Add(chkStartup);
 
-            chkUpdates = new CheckBox { Text = "Check for updates once a day", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
+            chkUpdates = new CheckBox { Text = "Check once a day for updates to this app and Equalizer APO", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
             chkUpdates.Click += (s, e) =>
             {
                 core.Settings.NoUpdateCheck = !chkUpdates.Checked;
@@ -292,6 +297,9 @@ namespace DacEqSwitcher
             var up = core.Updater.Available;
             lblUpdate.Text = up == null ? "" : "Update available: " + up.Tag;
             lblUpdate.Visible = btnUpdate.Visible = up != null;
+            var eapoNew = core.Updater.EapoLatest;
+            lblEapoUpdate.Text = eapoNew == null ? "" : "Equalizer APO " + eapoNew + " is available (you have " + core.Updater.EapoInstalled + "). Install it, then restart Windows.";
+            lblEapoUpdate.Visible = btnEapoUpdate.Visible = eapoNew != null;
             if (lvRules != null) HighlightActiveRule();
             if (tabs != null && tabs.SelectedTab == dacPage) dacPanel.Refresh(core.Monitor.Snapshot());
         }

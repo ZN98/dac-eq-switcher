@@ -26,13 +26,14 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest   # follows GitHub's current Ubuntu image
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+      # Plain git instead of a third-party action, so there's no action version to keep current
+      - name: Check out
+        run: |
+          git clone --quiet "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" .
 
       - name: Fetch the latest toppingctl
         id: tc

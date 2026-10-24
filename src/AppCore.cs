@@ -33,6 +33,7 @@ namespace DacEqSwitcher
         [DataMember] public bool Dx1WriteConsent;
         [DataMember] public bool NoUpdateCheck;        // default (false) = check daily
         [DataMember] public string NotifiedUpdate;
+        [DataMember] public string NotifiedEapo;
 
         void Fix()
         {
@@ -181,7 +182,7 @@ namespace DacEqSwitcher
         public readonly ProfileStore Profiles = new ProfileStore();
         public readonly Eapo Eapo = new Eapo();
         public readonly DeviceMonitor Monitor = new DeviceMonitor();
-        public readonly Updater Updater = new Updater();
+        public readonly Updater Updater;
         public event Action StateChanged;
 
         readonly object evalLock = new object();
@@ -195,6 +196,7 @@ namespace DacEqSwitcher
         {
             Directory.CreateDirectory(Paths.Data);
             Settings = Settings.Load(Paths.Settings);
+            Updater = new Updater(() => Eapo.InstallDir);
             Monitor.Changed += OnMonitor;
         }
 

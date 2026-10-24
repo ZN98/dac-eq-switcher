@@ -53,7 +53,8 @@ GOOD TO KNOW
     and can turn it off (a backup of config.txt is kept).
 
 UPDATES
-  The app checks once a day for a new version (one small request to GitHub) and offers
+  The app checks once a day for a new version of itself (one small request to GitHub)
+  and of Equalizer APO (one to SourceForge). App updates are offered
   it on the Overview tab and in the tray menu; one click installs it. New versions are
   built automatically whenever toppingctl changes, and only released after every DAC
   command has been checked byte-for-byte against toppingctl. Turn the check off on the

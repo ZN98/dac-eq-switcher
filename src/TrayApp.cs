@@ -94,6 +94,14 @@ namespace DacEqSwitcher
                     tray.ShowBalloonTip(8000, Program.Name + " " + up.Tag, "An update is available. Open the app or the tray menu to install it.", ToolTipIcon.Info);
                 }
             }
+            var eapo = core.Updater.EapoLatest;
+            if (eapo != null && up == null && core.Settings.NotifiedEapo != eapo.ToString())
+            {
+                core.Settings.NotifiedEapo = eapo.ToString();
+                core.SaveSettings();
+                tray.ShowBalloonTip(8000, "Equalizer APO " + eapo + " is available",
+                    "You have " + core.Updater.EapoInstalled + ". Open " + Program.Name + " for the download link.", ToolTipIcon.Info);
+            }
             if (form != null && !form.IsDisposed) form.RefreshState();
         }
 
