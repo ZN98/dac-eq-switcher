@@ -137,113 +137,6 @@ namespace DacEqSwitcher
         public WriteJob Pause() { Frames.Add(null); return this; }
     }
 
-    // --------------------------------------------------------------------- PEQ --
-    sealed class PeqBand
-    {
-        public string Type = "PK";
-        public double Freq = ToppingTables.DefaultBandFreq, Gain, Q = ToppingTables.DefaultBandQ;
-        public bool On;
-    }
-
-    /// Turning an EQ profile into the DAC's own parametric EQ (toppingctl apply).
-    static class Peq
-    {
-        static readonly Regex FilterRe = new Regex(
-            @"^Filter\s*\d*\s*:\s*(ON|OFF)\s+(\w+)\s+Fc\s+([\d.]+)\s*Hz\s+Gain\s+(-?[\d.]+)\s*dB\s+Q\s+([\d.]+)", RegexOptions.IgnoreCase);
-        static readonly Regex PreampRe = new Regex(@"^Preamp\s*:\s*(-?[\d.]+)\s*dB", RegexOptions.IgnoreCase);
-        static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-
-        /// Returns the problems that stop this profile fitting the DAC (empty = OK).
-        public static List<string> Plan(string text, Protocol p, out List<PeqBand> bands, out double preamp)
-        {
-            var problems = new List<string>();
-            bands = new List<PeqBand>();
-            preamp = 0;
-            bool allChannels = true;
-            int n = 0;
-            foreach (var raw in EqText.SplitLines(text))
-            {
-                n++;
-                string s = raw.Trim();
-                if (s.Length == 0 || s.StartsWith("#")) continue;
-                string cmd = EqText.CommandOf(s);
-                if (cmd == "channel")
-                {
-                    var names = s.Substring(s.IndexOf(':') + 1).Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                    allChannels = names.Any(x => x.Equals("all", StringComparison.OrdinalIgnoreCase));
-                    continue;
-                }
-                if (cmd != "preamp" && cmd != "filter")
-                {
-                    problems.Add("Line " + n + ": the DAC can only store Preamp and PK / LS / HS filters.");
-                    continue;
-                }
-                if (!allChannels)
-                {
-                    problems.Add("Line " + n + ": the DAC's EQ uses the same filters for left and right, so per-channel lines can't be stored.");
-                    continue;
-                }
-                if (cmd == "preamp")
-                {
-                    var m = PreampRe.Match(s);
-                    if (m.Success) preamp += double.Parse(m.Groups[1].Value, Inv);
-                    else problems.Add("Line " + n + ": Preamp needs a value in dB.");
-                    continue;
-                }
-                var f = FilterRe.Match(s);
-                if (!f.Success) { problems.Add("Line " + n + ": filters need Fc, Gain and Q (e.g. Filter: ON PK Fc 1000 Hz Gain -3 dB Q 1.41)."); continue; }
-                string type = f.Groups[2].Value.ToUpperInvariant();
-                if (!ToppingTables.FilterTypes.ContainsKey(type)) { problems.Add("Line " + n + ": " + type + " filters aren't supported by the DAC (PK, LS, HS only)."); continue; }
-                bands.Add(new PeqBand
-                {
-                    Type = type, On = f.Groups[1].Value.Equals("ON", StringComparison.OrdinalIgnoreCase),
-                    Freq = double.Parse(f.Groups[3].Value, Inv), Gain = double.Parse(f.Groups[4].Value, Inv), Q = double.Parse(f.Groups[5].Value, Inv),
-                });
-            }
-            // toppingctl validate(): per-model ranges from the vendor app's own clamps
-            bool dx1 = p == Protocol.Dx1;
-            double fLo = dx1 ? 20 : 10, fHi = dx1 ? 20000 : 22000, gLo = dx1 ? -12 : -40, gHi = dx1 ? 12 : 40, qLo = dx1 ? 0.1 : 0.01, qHi = dx1 ? 20 : 100;
-            if (bands.Count > ToppingTables.BandCount)
-                problems.Add(bands.Count + " filters, but the DAC has " + ToppingTables.BandCount + " bands.");
-            for (int i = 0; i < bands.Count; i++)
-            {
-                var b = bands[i];
-                if (b.Freq < fLo || b.Freq > fHi) problems.Add("Filter " + (i + 1) + ": " + b.Freq + " Hz is outside " + fLo + "–" + fHi + " Hz.");
-                if (b.Gain < gLo || b.Gain > gHi) problems.Add("Filter " + (i + 1) + ": " + b.Gain + " dB is outside ±" + gHi + " dB.");
-                if (b.Q < qLo || b.Q > qHi) problems.Add("Filter " + (i + 1) + ": Q " + b.Q + " is outside " + qLo + "–" + qHi + ".");
-            }
-            if (preamp < -40 || preamp > 10) problems.Add("Preamp " + preamp + " dB is outside -40 to +10 dB.");
-            return problems;
-        }
-
-        static int R(double x) { return (int)Math.Round(x, MidpointRounding.ToEven); }   // Python round()
-
-        /// Preamp and all band registers (unused ones explicitly disabled), as toppingctl apply.
-        public static List<byte[]> BuildFrames(List<PeqBand> bands, double preamp)
-        {
-            var o = new List<byte[]>();
-            long q25 = (long)Math.Round(Math.Pow(10, preamp / 20.0) * ToppingTables.PreampScale, MidpointRounding.ToEven);
-            o.Add(Frames.Write(ToppingTables.RegPreamp, 0x01, q25));
-            o.Add(Frames.Write(ToppingTables.RegPreamp, 0x02, 1));
-            o.Add(Frames.Write(ToppingTables.RegPreamp, 0x03, q25));
-            o.Add(Frames.Write(ToppingTables.RegPreamp, 0x04, 1));
-            for (int i = 0; i < ToppingTables.RegCount; i++)
-            {
-                var b = i < bands.Count ? bands[i] : new PeqBand();
-                int reg = ToppingTables.PeqFirst + i;
-                foreach (int ch in new[] { 0, 5 })
-                {
-                    o.Add(Frames.Write(reg, 1 + ch, ToppingTables.FilterTypes[b.Type]));
-                    o.Add(Frames.Write(reg, 2 + ch, R(b.Freq)));
-                    o.Add(Frames.Write(reg, 3 + ch, R(b.Gain * 10)));
-                    o.Add(Frames.Write(reg, 4 + ch, R(b.Q * 10000)));
-                    o.Add(Frames.Write(reg, 5 + ch, b.On ? 1 : 0));
-                }
-            }
-            return o;
-        }
-    }
-
     /// Knows which read-safe queries to send and how to decode replies for one protocol.
     abstract class ProtocolHandler
     {
@@ -397,7 +290,7 @@ namespace DacEqSwitcher
 
         // ------------------------------------------------------------- writes --
         // Each mirrors a toppingctl command (cmd_vol_dx1, cmd_mute, cmd_input, cmd_filter,
-        // cmd_gain, cmd_power, cmd_eq, cmd_apply).
+        // cmd_gain, cmd_power, cmd_eq).
         public static int VolumeRaw(double db)
         {
             // toppingctl dx1_db_to_raw(): 1 dB steps below -10 dB, 0.5 dB above
@@ -420,15 +313,6 @@ namespace DacEqSwitcher
         /// slot 0-2, or -1 = the DAC's EQ off (0xffffffff)
         public static WriteJob SelectEq(int slot) { return new WriteJob("eq") { Refresh = true }.Add(Frames.Write(ToppingTables.Dx1RegSwitchCfg, slot < 0 ? 0xFFFFFFFFL : slot)); }
 
-        /// PEQ writes land in the active slot, so select the target slot first; optionally put the previous state back.
-        public static WriteJob UploadEq(int slot, List<PeqBand> bands, double preamp, int restore)
-        {
-            var j = new WriteJob("upload EQ") { Refresh = true };
-            j.Add(Frames.Write(ToppingTables.Dx1RegSwitchCfg, slot)).Pause();
-            j.AddRange(Peq.BuildFrames(bands, preamp));
-            if (restore != slot) j.Pause().Add(Frames.Write(ToppingTables.Dx1RegSwitchCfg, restore < 0 ? 0xFFFFFFFFL : restore));
-            return j;
-        }
     }
 
     // ------------------------------------------------------------------ DX5 II --
@@ -549,7 +433,7 @@ namespace DacEqSwitcher
         }
 
         // ------------------------------------------------------------- writes --
-        // cmd_vol, cmd_gain, cmd_power, scenes.py recall, setctl.py, cmd_apply. All committed.
+        // cmd_vol, cmd_gain, cmd_power, scenes.py recall, setctl.py. All committed.
         public static WriteJob SetVolume(int steps)
         {
             return new WriteJob("volume").Add(Frames.Write(ToppingTables.RegCtrl, ToppingTables.SubVolume, steps)).Add(Frames.Commit());
@@ -568,10 +452,5 @@ namespace DacEqSwitcher
         public static WriteJob Recall(int cmd) { return new WriteJob("scene").Add(Frames.Write(cmd, 1)).Add(Frames.Commit()); }
 
         public static WriteJob Set(int cmd, int raw) { return new WriteJob("setting").Add(Frames.Write(cmd, raw)).Add(Frames.Commit()); }
-
-        public static WriteJob UploadEq(List<PeqBand> bands, double preamp)
-        {
-            return new WriteJob("upload EQ").AddRange(Peq.BuildFrames(bands, preamp)).Add(Frames.Commit());
-        }
     }
 }

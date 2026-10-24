@@ -30,12 +30,10 @@ GETTING STARTED
 DAC CONTROLS
   The DAC controls tab shows the commands toppingctl implements for your model:
     DX1 II: volume, mute, input, headphone gain, PCM filter, power, choosing the
-            DAC's own EQ slot (with its stored names), and storing an EQ profile in a slot.
-    DX5 II: volume, headphone gain, power, recalling scenes C1/C2, storing an EQ
-            profile in the DAC's EQ, and ~30 more settings (each read back from the
-            DAC to confirm it changed).
-  Volume asks before going above -10 dB. "Store an EQ profile in the DAC" checks the
-  profile fits the DAC's EQ first (up to 10 PK / LS / HS filters, same on both channels).
+            DAC's own EQ slot (with its stored names).
+    DX5 II: volume, headphone gain, power, recalling scenes C1/C2, and ~30 more
+            settings (each read back from the DAC to confirm it changed).
+  Volume asks before going above -10 dB.
   Things toppingctl can't do aren't offered: changing the DX1 II's output (use the
   knob), saving scenes, factory reset or firmware updates.
   toppingctl marks DX1 II control as tested on one unit, so the app asks once before

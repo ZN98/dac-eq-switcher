@@ -29,7 +29,7 @@ namespace DacEqSwitcher
         TextBox txtEq;
         ResponseGraph graph;
         Label lblEqInfo, lblNoProfile;
-        Button btnSave, btnRename, btnDelete, btnStore;
+        Button btnSave, btnRename, btnDelete;
         Timer analyseTimer;
         string editing;
         bool dirty, loading;
@@ -57,7 +57,7 @@ namespace DacEqSwitcher
             KeyDown += (s, e) => { if (e.Control && e.KeyCode == Keys.S && tabs.SelectedTab == profilesPage) { SaveProfile(); e.SuppressKeyPress = true; } };
 
             tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 5) };
-            dacPanel = new DacPanel(core, new DacActions(core, System.Threading.SynchronizationContext.Current), () => editing);
+            dacPanel = new DacPanel(core, new DacActions(core, System.Threading.SynchronizationContext.Current));
             dacPage = new TabPage("DAC controls") { UseVisualStyleBackColor = true };
             dacPage.Controls.Add(dacPanel);
             profilesPage = BuildProfiles();
@@ -375,8 +375,7 @@ namespace DacEqSwitcher
             btnRename = Btn("Rename", (s, e) => RenameProfile());
             btnDelete = Btn("Delete", (s, e) => DeleteProfile());
             var lb = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0) };
-            btnStore = Btn("Store in DAC…", (s, e) => { if (ConfirmLeaveEditor()) dacPanel.StoreEq(editing); });
-            lb.Controls.AddRange(new Control[] { Btn("New", (s, e) => NewProfile()), Btn("Import…", (s, e) => ImportProfiles()), btnRename, btnDelete, btnStore });
+            lb.Controls.AddRange(new Control[] { Btn("New", (s, e) => NewProfile()), Btn("Import…", (s, e) => ImportProfiles()), btnRename, btnDelete });
             left.Controls.Add(lb, 0, 1);
             split.Panel1.Controls.Add(left);
 
@@ -451,7 +450,7 @@ namespace DacEqSwitcher
             editing = name;
             bool has = name != null;
             txtEq.Visible = has; lblNoProfile.Visible = !has;
-            btnRename.Enabled = btnDelete.Enabled = btnStore.Enabled = has;
+            btnRename.Enabled = btnDelete.Enabled = has;
             loading = true;
             txtEq.Text = text ?? "";
             loading = false;

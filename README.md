@@ -6,7 +6,7 @@ A small Windows tray app for Topping DACs that:
   (output, input, headphone gain, PCM filter, the DAC's own EQ preset, sample rate …),
   using rules you set up;
 - **replaces the Topping web app**: every DAC setting [toppingctl](https://github.com/gjcourt/toppingctl)
-  can change is on the *DAC controls* tab, including storing an EQ profile in the DAC;
+  can change is on the *DAC controls* tab;
 - lets you import, type or paste EQs (Peace, Equalizer APO, AutoEQ, REW) with a live response graph.
 
 Supported: the models toppingctl can read, currently the **Topping DX1 II** and **DX5 II**.

@@ -14,7 +14,7 @@ for k in dx1 dx5; do
     DACEQ_SIM=$k DACEQ_SIM_STATE="$T/sim.txt" DACEQ_SIM_WRITES="$T/writes.txt" DACEQ_EAPO_CONFIG="$T/eapo" \
         DACEQ_DATA="$T/data" HOME="$T" timeout 120 mono build/DacEqTest.exe $k > "$T/out.txt" 2>&1 || { cat "$T/out.txt"; fail=1; continue; }
     cat "$T/out.txt"
-    if grep -q -v ': ok$\|confirmed\|^state\|^slots\|^plan\|^Connected\|^EM6L' "$T/out.txt"; then echo "unexpected output for $k"; fail=1; fi
+    if grep -q -v ': ok$\|confirmed\|^state\|^slots\|^Connected\|^EM6L' "$T/out.txt"; then echo "unexpected output for $k"; fail=1; fi
     python3 test/expected.py "$TC" $k > "$T/expected.txt"
     if cmp -s "$T/expected.txt" "$T/writes.txt"; then
         echo "$k: all $(wc -l < "$T/writes.txt") frames identical to toppingctl's"

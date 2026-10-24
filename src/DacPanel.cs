@@ -11,7 +11,6 @@ namespace DacEqSwitcher
     {
         readonly AppCore core;
         readonly DacActions actions;
-        readonly Func<string> selectedProfile;
         readonly TableLayoutPanel grid;
         readonly Label header, status, note;
         readonly List<Action<Dictionary<string, int>>> updaters = new List<Action<Dictionary<string, int>>>();
@@ -23,11 +22,10 @@ namespace DacEqSwitcher
 
         static readonly Color Muted = SystemColors.GrayText;
 
-        public DacPanel(AppCore core, DacActions actions, Func<string> selectedProfile)
+        public DacPanel(AppCore core, DacActions actions)
         {
             this.core = core;
             this.actions = actions;
-            this.selectedProfile = selectedProfile;
             Dock = DockStyle.Fill;
             AutoScroll = true;
             Padding = new Padding(16, 12, 16, 12);
@@ -184,24 +182,6 @@ namespace DacEqSwitcher
             return b;
         }
 
-        Button StoreButton()
-        {
-            var b = new Button { Text = "Store an EQ profile in the DAC…", AutoSize = true, UseVisualStyleBackColor = true };
-            b.Click += (s, e) => StoreEq(selectedProfile());
-            return b;
-        }
-
-        public void StoreEq(string profile)
-        {
-            if (core.Monitor.Handler == null || !core.Monitor.Connected) { MessageBox.Show(FindForm(), "Connect your DAC first.", Program.Name); return; }
-            if (!Consent()) return;
-            using (var d = new StoreEqDialog(core, profile))
-            {
-                if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
-                Send(this, d.Job, "Stored “" + d.Profile + "” in the DAC" + (d.Target != null ? " (" + d.Target + ")" : "") + ".");
-            }
-        }
-
         // ------------------------------------------------------------- build --
         public void Refresh(Dictionary<string, int> vals)
         {
@@ -271,7 +251,6 @@ namespace DacEqSwitcher
             Func<int, string> eqName = v => v < 0 ? "Off" : "EQ " + (v + 1) + (slots.Length == 3 ? "  ·  " + slots[v].Name : "");
             var eq = Choice(Dx1Protocol.DacEq, new[] { -1, 0, 1, 2 }, eqName, Dx1Protocol.SelectEq, "The DAC's own EQ");
             Row("DAC's own EQ", eq, "adds to Equalizer APO's EQ");
-            Row("", StoreButton());
 
             var power = new Button { AutoSize = true, UseVisualStyleBackColor = true };
             power.Click += (s, e) =>
@@ -318,7 +297,6 @@ namespace DacEqSwitcher
             scenes.Controls.Add(ActionButton("Recall C2", () => Dx5Protocol.Recall(ToppingTables.RecallC2), "Recalled scene C2.",
                 "Recall scene C2? It can change volume, input, output and EQ at once."));
             Row("Scenes", scenes);
-            Row("DAC's EQ", StoreButton());
 
             var power = new Button { AutoSize = true, UseVisualStyleBackColor = true };
             power.Click += (s, e) =>
@@ -363,111 +341,6 @@ namespace DacEqSwitcher
             }
             note.Text = "Controls are the commands toppingctl implements for the DX5 II (rev " + ToppingTables.Revision + "). " +
                         "Every setting under More settings is read back from the DAC to confirm it changed.";
-        }
-    }
-
-    /// Picks a profile (and DX1 II slot) and checks it fits the DAC's own EQ.
-    sealed class StoreEqDialog : Form
-    {
-        readonly AppCore core;
-        readonly ComboBox cboProfile, cboSlot;
-        readonly CheckBox chkActivate;
-        readonly Label lblCheck;
-        readonly Button ok;
-        public WriteJob Job { get; private set; }
-        public string Profile { get; private set; }
-        public string Target { get; private set; }
-
-        public StoreEqDialog(AppCore core, string profile)
-        {
-            this.core = core;
-            Text = "Store an EQ in the DAC";
-            Font = SystemFonts.MessageBoxFont;
-            AutoScaleMode = AutoScaleMode.Dpi;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            StartPosition = FormStartPosition.CenterParent;
-            MinimizeBox = MaximizeBox = false;
-            ShowInTaskbar = false;
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            Padding = new Padding(14);
-
-            var col = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Dock = DockStyle.Fill };
-            col.Controls.Add(new Label { Text = "EQ profile:", AutoSize = true });
-            cboProfile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
-            foreach (var n in core.Profiles.Names()) cboProfile.Items.Add(n);
-            cboProfile.SelectedItem = profile != null && cboProfile.Items.Contains(profile) ? profile : (cboProfile.Items.Count > 0 ? cboProfile.Items[0] : null);
-            col.Controls.Add(cboProfile);
-
-            var dx1 = core.Monitor.Handler as Dx1Protocol;
-            if (dx1 != null)
-            {
-                col.Controls.Add(new Label { Text = "Store it in:", AutoSize = true, Margin = new Padding(0, 10, 0, 0) });
-                cboSlot = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
-                var slots = dx1.StoredSlots;
-                for (int i = 0; i < 3; i++) cboSlot.Items.Add("EQ " + (i + 1) + (slots.Length == 3 ? "  (now “" + slots[i].Name + "”)" : ""));
-                int cur;
-                cboSlot.SelectedIndex = core.Monitor.Snapshot().TryGetValue(Dx1Protocol.DacEq, out cur) && cur >= 0 ? cur : 0;
-                col.Controls.Add(cboSlot);
-                chkActivate = new CheckBox { Text = "Turn the DAC's EQ on with this slot afterwards", AutoSize = true, Margin = new Padding(0, 6, 0, 0) };
-                col.Controls.Add(chkActivate);
-                cboSlot.SelectedIndexChanged += (s, e) => Check();
-            }
-            lblCheck = new Label { AutoSize = true, MaximumSize = new Size(420, 0), Margin = new Padding(0, 10, 0, 0) };
-            col.Controls.Add(lblCheck);
-
-            ok = new Button { Text = "Store", AutoSize = true, Margin = new Padding(0, 12, 6, 0) };
-            ok.Click += (s, e) => { if (Build()) DialogResult = DialogResult.OK; };
-            var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel, Margin = new Padding(0, 12, 0, 0) };
-            var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.Right };
-            buttons.Controls.Add(ok);
-            buttons.Controls.Add(cancel);
-            col.Controls.Add(buttons);
-            Controls.Add(col);
-            AcceptButton = ok;
-            CancelButton = cancel;
-            cboProfile.SelectedIndexChanged += (s, e) => Check();
-            Check();
-        }
-
-        List<PeqBand> bands;
-        double preamp;
-
-        void Check()
-        {
-            var name = cboProfile.SelectedItem as string;
-            if (name == null) { lblCheck.Text = "Create an EQ profile first."; ok.Enabled = false; return; }
-            string text = core.Profiles.Read(name);
-            var problems = Peq.Plan(text, core.Monitor.Model.Protocol, out bands, out preamp);
-            if (problems.Count > 0)
-            {
-                lblCheck.ForeColor = Color.FromArgb(178, 92, 0);
-                lblCheck.Text = "This EQ doesn't fit the DAC's own EQ:\n• " + string.Join("\n• ", problems.Take(6)) +
-                                (problems.Count > 6 ? "\n• …" : "") + "\n\nIt still works through Equalizer APO.";
-                ok.Enabled = false;
-                return;
-            }
-            var r = EqText.Analyse(text);
-            string where = cboSlot != null ? "EQ " + (cboSlot.SelectedIndex + 1) : "the DAC's EQ";
-            lblCheck.ForeColor = SystemColors.ControlText;
-            lblCheck.Text = bands.Count + " filter(s), preamp " + preamp.ToString("+0.0;-0.0;0") + " dB. Replaces the curve stored in " + where + "." +
-                            (r.PeakDb > 0.05 ? "\n⚠ Peak gain is " + r.PeakDb.ToString("+0.0") + " dB, which can clip: lower its Preamp." : "");
-            ok.Enabled = true;
-        }
-
-        bool Build()
-        {
-            Profile = cboProfile.SelectedItem as string;
-            if (Profile == null) return false;
-            if (core.Monitor.Handler is Dx1Protocol)
-            {
-                int slot = cboSlot.SelectedIndex, cur;
-                int restore = chkActivate.Checked ? slot : (core.Monitor.Snapshot().TryGetValue(Dx1Protocol.DacEq, out cur) ? cur : -1);
-                Job = Dx1Protocol.UploadEq(slot, bands, preamp, restore);
-                Target = "EQ " + (slot + 1);
-            }
-            else Job = Dx5Protocol.UploadEq(bands, preamp);
-            return true;
         }
     }
 }
