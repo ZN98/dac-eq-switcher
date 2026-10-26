@@ -40,6 +40,9 @@ DAC CONTROLS
   sending anything to a DX1 II.
 
 GOOD TO KNOW
+  - EQ on/off: "Turn EQ off" on the Overview tab, "EQ on" in the tray menu, or
+    middle-click the tray icon. Off bypasses Equalizer APO's EQ (the tray icon becomes
+    a hollow ring); on puts back whatever your rules pick. It's remembered across restarts.
   - Pause (tray menu or Overview) frees the DAC so Topping Tune / Topping Home can
     connect. Only one program can talk to the DAC at a time.
   - Input, gain and filter on the DX1 II can only be learned when you change them on

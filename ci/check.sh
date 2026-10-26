@@ -22,4 +22,9 @@ for k in dx1 dx5; do
         echo "$k: FRAMES DIFFER from toppingctl"; diff "$T/expected.txt" "$T/writes.txt" | head -20; fail=1
     fi
 done
+# EQ on/off switch
+mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/ToggleTest.cs
+T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data"; touch "$T/eapo/config.txt"
+DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
+    timeout 120 mono build/DacEqTest.exe || { echo "EQ on/off test failed"; fail=1; }
 exit $fail

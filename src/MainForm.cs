@@ -17,6 +17,7 @@ namespace DacEqSwitcher
         static readonly Color Bad = Color.FromArgb(190, 30, 30);
 
         // overview
+        Button btnEq;
         Label lblDevice, lblStatus, lblActive, lblWhy, lblDacEq, lblEapo, lblHint;
         Button btnPause, btnSetup, btnOthers, btnConfigurator;
         TableLayoutPanel tblState;
@@ -172,8 +173,17 @@ namespace DacEqSwitcher
             lblWhy = Lbl("", 0, FontStyle.Regular, Muted);
             active.Controls.Add(lblActive);
             active.Controls.Add(lblWhy);
-            active.Margin = new Padding(0, 12, 0, 0);
-            col.Controls.Add(active);
+            btnEq = Btn("Turn EQ off", (s, e) => app.ToggleEq());
+            btnEq.Font = new Font(Font.FontFamily, 10f, FontStyle.Bold);
+            btnEq.Padding = new Padding(10, 3, 10, 3);
+            var activeRow = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0, 12, 0, 0) };
+            activeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            activeRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            active.Margin = new Padding(0);
+            activeRow.Controls.Add(active, 0, 0);
+            btnEq.Anchor = AnchorStyles.Right;
+            activeRow.Controls.Add(btnEq, 1, 0);
+            col.Controls.Add(activeRow);
 
             tblState = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Top };
             tblState.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -236,11 +246,15 @@ namespace DacEqSwitcher
             btnPause.Text = m.Paused ? "Resume" : "Pause";
 
             lblActive.Text = app.ActiveText;
+            lblActive.ForeColor = core.EqOn ? ForeColor : Muted;
+            btnEq.Text = core.EqOn ? "Turn EQ off" : "Turn EQ on";
             if (core.WriteError != null) { lblWhy.Text = "Couldn't update Equalizer APO: " + core.WriteError; lblWhy.ForeColor = Bad; }
             else
             {
                 lblWhy.ForeColor = Muted;
-                if (!m.Connected) lblWhy.Text = core.ActiveProfile == null ? "" : "Kept while the DAC is disconnected or paused";
+                if (!core.EqOn)
+                    lblWhy.Text = "Equalizer APO's EQ is bypassed." + (string.IsNullOrEmpty(core.ActiveProfile) ? "" : " Turning it on uses \u201C" + core.ActiveProfile + "\u201D.");
+                else if (!m.Connected) lblWhy.Text = core.ActiveProfile == null ? "" : "Kept while the DAC is disconnected or paused";
                 else if (core.ActiveRule != null) lblWhy.Text = "Because " + RuleText(core.ActiveRule);
                 else lblWhy.Text = core.Settings.Rules.Count == 0 ? "No rules yet: add them on the Rules tab" : "No rule matches, so the default is used";
             }

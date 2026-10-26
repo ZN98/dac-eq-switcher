@@ -13,7 +13,7 @@ namespace DacEqSwitcher
         readonly AppCore core;
         readonly NotifyIcon tray;
         readonly SynchronizationContext ui;
-        readonly ToolStripMenuItem miActive, miPause, miStartup, miUpdate;
+        readonly ToolStripMenuItem miActive, miEq, miPause, miStartup, miUpdate;
         readonly DeviceChangeWindow deviceWindow;
         MainForm form;
         int queued;
@@ -30,15 +30,20 @@ namespace DacEqSwitcher
             var open = new ToolStripMenuItem("Open " + Program.Name, null, (s, e) => ShowWindow());
             open.Font = new Font(open.Font, FontStyle.Bold);
             miActive = new ToolStripMenuItem("") { Enabled = false };
+            miEq = new ToolStripMenuItem("EQ on", null, (s, e) => ToggleEq()) { ShortcutKeyDisplayString = "middle-click" };
             miPause = new ToolStripMenuItem("Pause (free the DAC for Topping Tune)", null, (s, e) => TogglePause());
             miStartup = new ToolStripMenuItem("Start with Windows", null, (s, e) => SetStartup(!Startup.Enabled));
             miUpdate = new ToolStripMenuItem("", null, (s, e) => InstallUpdate(false)) { Visible = false };
-            menu.Items.AddRange(new ToolStripItem[] { open, miActive, miUpdate, new ToolStripSeparator(), miPause, miStartup,
+            menu.Items.AddRange(new ToolStripItem[] { open, miActive, miUpdate, new ToolStripSeparator(), miEq, miPause, miStartup,
                 new ToolStripSeparator(), new ToolStripMenuItem("Exit", null, (s, e) => Exit()) });
             menu.Opening += (s, e) => miStartup.Checked = Startup.Enabled;
 
             tray = new NotifyIcon { ContextMenuStrip = menu, Visible = true };
-            tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
+            tray.MouseClick += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Left) ShowWindow();
+                else if (e.Button == MouseButtons.Middle) ToggleEq();
+            };
             tray.BalloonTipClicked += (s, e) => ShowWindow();
 
             core.StateChanged += Queue;
@@ -61,6 +66,7 @@ namespace DacEqSwitcher
         {
             get
             {
+                if (!core.EqOn) return "Off";
                 if (core.ActiveProfile == null) return "No EQ applied yet";
                 return core.ActiveProfile == "" ? "No EQ" : core.ActiveProfile;
             }
@@ -71,16 +77,18 @@ namespace DacEqSwitcher
             var m = core.Monitor;
             string key, letter;
             Color color;
-            if (m.Paused) { key = "p"; color = Color.FromArgb(217, 138, 28); letter = "II"; }
+            if (!core.EqOn) { key = "off"; color = Color.FromArgb(128, 128, 128); letter = null; }
+            else if (m.Paused) { key = "p"; color = Color.FromArgb(217, 138, 28); letter = "II"; }
             else if (!m.Connected) { key = "d"; color = Color.FromArgb(128, 128, 128); letter = "–"; }
             else if (string.IsNullOrEmpty(core.ActiveProfile)) { key = "n"; color = Color.FromArgb(96, 112, 140); letter = "–"; }
             else { letter = core.ActiveProfile.Substring(0, 1).ToUpperInvariant(); key = "a" + letter; color = Color.FromArgb(37, 99, 235); }
             if (key != iconKey) { SetIcon(color, letter); iconKey = key; }
 
-            string line = m.Paused ? "Paused" : m.Connected ? (m.Model != null ? m.Model.Name + ": " : "") + ActiveText : m.Status;
+            string line = !core.EqOn ? "EQ off" : m.Paused ? "Paused" : m.Connected ? (m.Model != null ? m.Model.Name + ": " : "") + ActiveText : m.Status;
             string tip = Program.Name + "\n" + line;
             tray.Text = tip.Length > 63 ? tip.Substring(0, 62) + "…" : tip;
-            miActive.Text = m.Connected ? "Active EQ: " + ActiveText : m.Status;
+            miActive.Text = !core.EqOn ? "EQ is off" : m.Connected ? "Active EQ: " + ActiveText : m.Status;
+            miEq.Checked = core.EqOn;
             miPause.Checked = m.Paused;
             var up = core.Updater.Available;
             miUpdate.Visible = up != null;
@@ -113,10 +121,18 @@ namespace DacEqSwitcher
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                using (var b = new SolidBrush(color)) g.FillEllipse(b, 0, 0, size - 1, size - 1);
-                using (var f = new Font("Segoe UI", size * (letter.Length > 1 ? 0.42f : 0.58f), FontStyle.Bold, GraphicsUnit.Pixel))
-                using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                    g.DrawString(letter, f, Brushes.White, new RectangleF(0, 0, size, size + 1), sf);
+                if (letter == null)
+                {
+                    // EQ off: a hollow ring
+                    using (var p = new Pen(color, Math.Max(2f, size / 7f))) g.DrawEllipse(p, size / 8f, size / 8f, size * 3 / 4f, size * 3 / 4f);
+                }
+                else
+                {
+                    using (var b = new SolidBrush(color)) g.FillEllipse(b, 0, 0, size - 1, size - 1);
+                    using (var f = new Font("Segoe UI", size * (letter.Length > 1 ? 0.42f : 0.58f), FontStyle.Bold, GraphicsUnit.Pixel))
+                    using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                        g.DrawString(letter, f, Brushes.White, new RectangleF(0, 0, size, size + 1), sf);
+                }
                 IntPtr h = bmp.GetHicon();
                 tray.Icon = Icon.FromHandle(h);
                 if (iconHandle != IntPtr.Zero && Native.OnWindows) Native.DestroyIcon(iconHandle);
@@ -147,6 +163,12 @@ namespace DacEqSwitcher
             if (err == null) { Exit(); return; }
             if (MessageBox.Show(err + "\n\nOpen the release page?", Program.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 try { System.Diagnostics.Process.Start(up.Page); } catch { }
+        }
+
+        public void ToggleEq()
+        {
+            core.SetEqOn(!core.EqOn);
+            Refresh();
         }
 
         public void TogglePause()

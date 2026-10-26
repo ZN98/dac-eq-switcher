@@ -34,6 +34,8 @@ namespace DacEqSwitcher
         [DataMember] public bool NoUpdateCheck;        // default (false) = check daily
         [DataMember] public string NotifiedUpdate;
         [DataMember] public string NotifiedEapo;
+        [DataMember] public bool EqOff;               // master switch; default (false) = EQ on
+        [DataMember] public string LastProfile;       // last EQ the rules picked, used until the DAC is seen
 
         void Fix()
         {
@@ -202,6 +204,7 @@ namespace DacEqSwitcher
 
         public void Start()
         {
+            if (!EqOn) Evaluate(true);   // stay bypassed from the moment the app starts
             Monitor.Start();
             Updater.Changed += () => { var h = StateChanged; if (h != null) h(); };
             Updater.SetEnabled(!Settings.NoUpdateCheck);
@@ -269,28 +272,54 @@ namespace DacEqSwitcher
             return r.Conditions.Count > 0 && r.Conditions.All(c => values.TryGetValue(c.Field, out v) && v == c.Value);
         }
 
+        public bool EqOn { get { return !Settings.EqOff; } }
+
+        /// Master switch: off bypasses Equalizer APO's EQ; on restores what the rules pick.
+        public void SetEqOn(bool on)
+        {
+            if (on == EqOn) return;
+            Settings.EqOff = !on;
+            SaveSettings();
+            Log.Write(on ? "EQ switched on" : "EQ switched off");
+            Changed();
+        }
+
+        const string OffText = "# DAC EQ Switcher: EQ switched off\r\n";
+        string writtenKey;   // what the active file holds: "off" or "on:<profile>"
+
         /// Re-picks the EQ. force: rewrite even if the same profile (after it was edited).
         public void Evaluate(bool force)
         {
             lock (evalLock)
             {
-                if (!Monitor.Connected) return;   // keep the current EQ while the DAC is away
-                HashSet<string> ls;
-                var vals = Values(out ls);
-                var rule = Settings.Rules.FirstOrDefault(r => Matches(r, vals));
-                string target = rule != null ? rule.Profile : Settings.DefaultProfile;
-                if (!Profiles.Exists(target)) target = "";
-                ActiveRule = rule;
-                if (!force && target == ActiveProfile && WriteError == null) return;
+                if (Monitor.Connected)
+                {
+                    HashSet<string> ls;
+                    var vals = Values(out ls);
+                    var rule = Settings.Rules.FirstOrDefault(r => Matches(r, vals));
+                    string target = rule != null ? rule.Profile : Settings.DefaultProfile;
+                    if (!Profiles.Exists(target)) target = "";
+                    ActiveRule = rule;
+                    if (ActiveProfile != target) Log.Write("EQ -> " + (target == "" ? "(none)" : target));
+                    ActiveProfile = target;
+                    if (Settings.LastProfile != target) { Settings.LastProfile = target; SaveSettings(); }
+                }
+                else if (ActiveProfile == null && Settings.LastProfile != null)
+                    ActiveProfile = Profiles.Exists(Settings.LastProfile) ? Settings.LastProfile : "";
+                // While the DAC is away the last EQ is kept; until one is known there's nothing to apply
+                if (EqOn && ActiveProfile == null) return;
+                string key = EqOn ? "on:" + ActiveProfile : "off";
+                if (!force && key == writtenKey && WriteError == null) return;
 
                 string text;
-                if (target == "") text = "# DAC EQ Switcher: no EQ for the DAC's current settings\r\n";
+                if (!EqOn) text = OffText;
+                else if (ActiveProfile == "") text = "# DAC EQ Switcher: no EQ for the DAC's current settings\r\n";
                 else
                 {
                     string body;
-                    try { body = Profiles.Read(target); }
+                    try { body = Profiles.Read(ActiveProfile); }
                     catch (Exception ex) { body = "# couldn't read profile: " + ex.Message + "\r\n"; }
-                    text = "# DAC EQ Switcher: active EQ \"" + target + "\" (edit it in the app, not here)\r\n"
+                    text = "# DAC EQ Switcher: active EQ \"" + ActiveProfile + "\" (edit it in the app, not here)\r\n"
                          + body.TrimEnd() + "\r\nChannel: all\r\n";
                 }
                 string err = null;
@@ -299,8 +328,7 @@ namespace DacEqSwitcher
                     if (Eapo.WriteActive(text, out err)) written = text;
                 }
                 WriteError = err;
-                if (ActiveProfile != target) Log.Write("EQ -> " + (target == "" ? "(none)" : target));
-                ActiveProfile = target;
+                if (err == null) writtenKey = key;
             }
         }
 
