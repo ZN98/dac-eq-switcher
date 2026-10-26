@@ -33,7 +33,10 @@ DAC CONTROLS
             DAC's own EQ slot (with its stored names).
     DX5 II: volume, headphone gain, power, recalling scenes C1/C2, and ~30 more
             settings (each read back from the DAC to confirm it changed).
-  Volume asks before going above -10 dB.
+  Volume follows the slider live as you drag it. Each slider position is one of the
+  DAC's real steps (DX1 II: 1 dB below -10 dB, 0.5 dB above), and the mouse wheel,
+  arrow keys and -/+ buttons move exactly one step. Going above -10 dB asks first:
+  while dragging, the DAC holds at -10 dB until you let go and confirm.
   Things toppingctl can't do aren't offered: changing the DX1 II's output (use the
   knob), saving scenes, factory reset or firmware updates.
   toppingctl marks DX1 II control as tested on one unit, so the app asks once before

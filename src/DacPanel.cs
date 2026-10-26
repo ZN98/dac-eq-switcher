@@ -128,48 +128,131 @@ namespace DacEqSwitcher
             public override string ToString() { return Text; }
         }
 
-        /// Volume slider in half-dB units; sends when released. Loud levels need a confirmation.
-        Control Volume(Func<Dictionary<string, int>, double?> current, Func<double, double> snap, Func<double, WriteJob> write)
+        /// Volume control: a slider with one position per DAC step, -/+ buttons and the level in dB.
+        /// The DAC follows the slider live while it's dragged. Going above -10 dB (toppingctl's
+        /// loud threshold) needs a confirmation: while dragging, the DAC holds at -10 dB until
+        /// you let go and confirm.
+        Control Volume(Func<Dictionary<string, int>, double?> current, Func<Dictionary<string, int>, double[]> steps, Func<double, WriteJob> write)
         {
-            var bar = new TrackBar { Minimum = -198, Maximum = 0, TickFrequency = 20, SmallChange = 1, LargeChange = 10, Width = 300, AutoSize = true };
-            var lbl = new Label { AutoSize = true, Margin = new Padding(6, 10, 0, 0), MinimumSize = new Size(70, 0) };
-            bool dragging = false;
-            double last = double.NaN;
-            Action commit = () =>
+            double warn = ToppingTables.VolWarnDb;
+            var slider = new VolumeSlider { Warn = warn, Width = 380, Margin = new Padding(0, 2, 0, 0) };
+            var minus = new Button { Text = "\u2212", Width = 30, Height = 28, Margin = new Padding(0, 8, 6, 0), UseVisualStyleBackColor = true };
+            var plus = new Button { Text = "+", Width = 30, Height = 28, Margin = new Padding(6, 8, 0, 0), UseVisualStyleBackColor = true };
+            var lbl = new Label { AutoSize = true, Margin = new Padding(10, 12, 0, 0), MinimumSize = new Size(150, 0),
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 10f, FontStyle.Bold) };
+            minus.Click += (s, e) => slider.Step(-1);
+            plus.Click += (s, e) => slider.Step(1);
+
+            double dacLevel = double.NaN;       // what the DAC last reported
+            double startLevel = double.NaN;     // DAC level when this drag began
+            double? pending = null;             // newest level waiting to be sent
+            double lastSent = double.NaN;
+            bool inFlight = false;
+            int lastAck = 0;
+            var pace = new Timer { Interval = 25 };
+            Disposed += (s, e) => pace.Dispose();
+
+            Func<double, string> fmt = db => db.ToString("0.0") + " dB";
+            Func<bool> interacting = () => slider.Dragging || inFlight || pending.HasValue || unchecked(Environment.TickCount - lastAck) < 600;
+
+            Action flush = null;
+            flush = () =>
             {
-                double db = snap(bar.Value / 2.0);
-                if (db == last) return;
-                if (db > ToppingTables.VolWarnDb && (double.IsNaN(last) || db > last) &&
-                    MessageBox.Show(FindForm(), "Set the volume to " + db.ToString("0.0") + " dB? That's loud, especially for headphones.",
-                                    Program.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                if (inFlight || !pending.HasValue) return;
+                double db = pending.Value;
+                pending = null;
+                if (db == lastSent) return;
+                if (!Consent()) { slider.Value = dacLevel; lbl.Text = fmt(dacLevel); return; }
+                inFlight = true;
+                lastSent = db;
+                busy.Add(slider);
+                actions.Send(write(db), err =>
                 {
-                    if (!double.IsNaN(last)) bar.Value = Clamp((int)Math.Round(last * 2));
-                    lbl.Text = (double.IsNaN(last) ? db : last).ToString("0.0") + " dB";
-                    return;
-                }
-                last = db;
-                Send(bar, write(db), "Volume set to " + db.ToString("0.0") + " dB.");
+                    inFlight = false;
+                    lastAck = Environment.TickCount;
+                    busy.Remove(slider);
+                    if (err != null) { Status(err, null); pending = null; return; }
+                    if (pending.HasValue) pace.Start();   // keep up with the slider, ~40 updates a second at most
+                });
             };
-            bar.Scroll += (s, e) => lbl.Text = snap(bar.Value / 2.0).ToString("0.0") + " dB";
-            bar.MouseDown += (s, e) => dragging = true;
-            bar.MouseUp += (s, e) => { dragging = false; commit(); };
-            bar.KeyUp += (s, e) => commit();
+            pace.Tick += (s, e) => { pace.Stop(); flush(); };
+            Action<double> send = db => { pending = db; if (!inFlight && !pace.Enabled) flush(); };
+
+            // Ask only when crossing above -10 dB; if the DAC is already above it, moving freely is fine.
+            Func<double, bool> alreadyLoud = level => !double.IsNaN(level) && level > warn;
+            Func<double> cap = () => alreadyLoud(startLevel) ? double.PositiveInfinity : warn;
+
+            slider.MouseDown += (s, e) => { startLevel = dacLevel; };
+            slider.Changing += () =>
+            {
+                double db = slider.Value;
+                if (!slider.Dragging) return;   // steps (keys, wheel, buttons) are handled on commit
+                lbl.Text = fmt(db);
+                if (db > cap())
+                {
+                    lbl.ForeColor = Color.FromArgb(178, 92, 0);
+                    status.Text = "Above " + fmt(warn) + ": the DAC stays at " + fmt(warn) + " until you let go and confirm.";
+                    status.ForeColor = Color.FromArgb(178, 92, 0);
+                    send(cap());
+                }
+                else
+                {
+                    lbl.ForeColor = ForeColor;
+                    if (status.Text.StartsWith("Above ")) status.Text = "";
+                    send(db);
+                }
+            };
+            slider.Committed += () =>
+            {
+                double db = slider.Value;
+                // after a drag: wherever the DAC was when it began; after a step: where it is now
+                double from = !double.IsNaN(startLevel) ? startLevel : Max(dacLevel, lastSent);
+                double allowed = alreadyLoud(from) ? double.PositiveInfinity : warn;
+                startLevel = double.NaN;
+                if (db > allowed)
+                {
+                    bool hadFocus = slider.Focused;
+                    var answer = MessageBox.Show(FindForm(), "Set the volume to " + fmt(db) + "? That's loud, especially for headphones.",
+                                                 Program.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (answer != DialogResult.Yes) slider.Value = Math.Min(warn, db);
+                    if (hadFocus) slider.Focus();   // keep arrow keys working after the prompt
+                }
+                lbl.Text = fmt(slider.Value);
+                lbl.ForeColor = ForeColor;
+                send(slider.Value);
+                status.Text = "";
+            };
+
             updaters.Add(vals =>
             {
+                var st = steps(vals);
                 var db = current(vals);
-                bar.Enabled = db.HasValue;
-                if (!db.HasValue || dragging || busy.Contains(bar) || bar.Focused && bar.Capture) return;
-                last = db.Value;
-                bar.Value = Clamp((int)Math.Round(db.Value * 2));
-                lbl.Text = db.Value.ToString("0.0") + " dB";
+                slider.Enabled = minus.Enabled = plus.Enabled = db.HasValue;
+                if (st != null) slider.Steps = st;
+                if (!db.HasValue) { lbl.Text = "\u2014"; return; }
+                dacLevel = db.Value;
+                if (interacting() || busy.Contains(slider)) return;
+                slider.Value = db.Value;
+                lastSent = slider.Value;
+                lbl.Text = fmt(slider.Value);
             });
-            var f = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            f.Controls.Add(bar);
-            f.Controls.Add(lbl);
+
+            var f = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            f.Controls.AddRange(new Control[] { minus, slider, plus, lbl });
             return f;
         }
 
-        static int Clamp(int v) { return Math.Max(-198, Math.Min(0, v)); }
+        static double Max(double a, double b) { return double.IsNaN(a) ? b : double.IsNaN(b) ? a : Math.Max(a, b); }
+
+        /// The volume levels a DX1 II can be set to (toppingctl dx1_db_to_raw).
+        static readonly double[] Dx1Steps = Enumerable.Range(0, ToppingTables.Dx1VolRawMax + 1)
+            .Where(r => Dx1Protocol.VolumeRaw(Dx1Protocol.VolumeDb(r)) == r).Select(Dx1Protocol.VolumeDb).ToArray();
+
+        static double[] UniformSteps(double step)
+        {
+            int n = (int)Math.Round(99 / step);
+            return Enumerable.Range(0, n + 1).Select(i => -99 + i * step).ToArray();
+        }
 
         Button ActionButton(string text, Func<WriteJob> job, string ok, string confirm = null)
         {
@@ -238,7 +321,7 @@ namespace DacEqSwitcher
                 string id = VolumeField(vals) == ToppingTables.Dx1FieldHpVol ? Dx1Protocol.VolHp
                           : VolumeField(vals) == ToppingTables.Dx1FieldLoVol ? Dx1Protocol.VolLo : Dx1Protocol.VolAll;
                 return vals.TryGetValue(id, out raw) ? Dx1Protocol.VolumeDb(raw) : (double?)null;
-            }, db => Dx1Protocol.VolumeDb(Dx1Protocol.VolumeRaw(db)),
+            }, vals => Dx1Steps,
                db => Dx1Protocol.SetVolume(VolumeField(core.Monitor.Snapshot()), db)));
 
             Row("Mute", Choice(Dx1Protocol.MuteBits, new[] { 0, 1, 2, 3 },
@@ -286,7 +369,7 @@ namespace DacEqSwitcher
             {
                 int raw;
                 return vals.TryGetValue("dx5.volume", out raw) ? -raw * step(vals) : (double?)null;
-            }, db => { double st = step(core.Monitor.Snapshot()); return -Math.Round(-db / st) * st; },
+            }, vals => UniformSteps(step(vals)),
                db => Dx5Protocol.SetVolume((int)Math.Round(-db / step(core.Monitor.Snapshot())))));
 
             Row("Headphone gain", Choice("dx5.highGain", new[] { 0, 1 }, v => v == 0 ? "Low" : "High", v => Dx5Protocol.SetGain(v == 1), "Headphone gain"));
