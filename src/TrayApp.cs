@@ -26,7 +26,8 @@ namespace DacEqSwitcher
             ui = new WindowsFormsSynchronizationContext();
             SynchronizationContext.SetSynchronizationContext(ui);
 
-            var menu = new ContextMenuStrip();
+            var menu = Theme.Menu();
+            menu.ShowCheckMargin = true;
             var open = new ToolStripMenuItem("Open " + Program.Name, null, (s, e) => ShowWindow());
             open.Font = new Font(open.Font, FontStyle.Bold);
             miActive = new ToolStripMenuItem("") { Enabled = false };

@@ -148,6 +148,8 @@ namespace DacEqSwitcher
         public abstract void Parse(int cmd, int idx, int frameLen, uint value, Action<string, int> set);
         /// Ask for slower-changing state again (after a write).
         public virtual void RequestRefresh() { }
+        /// The volume (dB) of the output in use, or null if not reported yet.
+        public abstract double? VolumeDb(Dictionary<string, int> v);
 
         public static ProtocolHandler For(Protocol p)
         {
@@ -304,6 +306,26 @@ namespace DacEqSwitcher
 
         public static double VolumeDb(int raw) { return Math.Max(0, Math.Min(ToppingTables.Dx1VolRawMax, raw)) / 10.0 - 99; }
 
+        /// toppingctl cmd_vol_dx1 targets: headphone memory, line memory, or both ("all").
+        public static int VolumeField(Dictionary<string, int> v)
+        {
+            int linked, output;
+            if (v.TryGetValue(VolLinked, out linked) && linked == 1) return ToppingTables.Dx1FieldLoHpVol;
+            if (!v.TryGetValue(Output, out output)) return ToppingTables.Dx1FieldLoHpVol;
+            return output == 2 ? ToppingTables.Dx1FieldHpVol : output == 1 ? ToppingTables.Dx1FieldLoVol : ToppingTables.Dx1FieldLoHpVol;
+        }
+
+        public override double? VolumeDb(Dictionary<string, int> v)
+        {
+            int f = VolumeField(v), raw;
+            string id = f == ToppingTables.Dx1FieldHpVol ? VolHp : f == ToppingTables.Dx1FieldLoVol ? VolLo : VolAll;
+            return v.TryGetValue(id, out raw) ? VolumeDb(raw) : (double?)null;
+        }
+
+        /// The volume levels a DX1 II can be set to (toppingctl dx1_db_to_raw).
+        public static readonly double[] VolumeSteps = Enumerable.Range(0, ToppingTables.Dx1VolRawMax + 1)
+            .Where(r => VolumeRaw(VolumeDb(r)) == r).Select(r => VolumeDb(r)).ToArray();
+
         public static WriteJob SetVolume(int field, double db) { return new WriteJob("volume").Add(Frames.Dx1Block(field, VolumeRaw(db))); }
         public static WriteJob SetMute(int bits) { return new WriteJob("mute").Add(Frames.Dx1Block(ToppingTables.Dx1FieldMute, bits)); }
         public static WriteJob SetInput(int v) { return new WriteJob("input").Add(Frames.Write(ToppingTables.Dx1RegInput, v)); }
@@ -424,6 +446,20 @@ namespace DacEqSwitcher
         public override IEnumerable<int> Poll(int tick)
         {
             if (tick % 2 == 0) yield return GetSettings;
+        }
+
+        public static double VolumeStep(Dictionary<string, int> v) { int s; return v.TryGetValue("dx5.volumeStep", out s) && s == 1 ? 1.0 : 0.5; }
+
+        public override double? VolumeDb(Dictionary<string, int> v)
+        {
+            int raw;
+            return v.TryGetValue("dx5.volume", out raw) ? -raw * VolumeStep(v) : (double?)null;
+        }
+
+        public static double[] VolumeSteps(double step)
+        {
+            int n = (int)Math.Round(99 / step);
+            return Enumerable.Range(0, n + 1).Select(i => -99 + i * step).ToArray();
         }
 
         public override void Parse(int cmd, int idx, int frameLen, uint v, Action<string, int> set)

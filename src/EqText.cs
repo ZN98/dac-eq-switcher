@@ -248,6 +248,13 @@ namespace DacEqSwitcher
                     if (m.Success) Add(L, R, toL, toR, i => ParseD(m.Groups[1].Value), points);
                     continue;
                 }
+                if (low.StartsWith("graphiceq:"))
+                {
+                    var pts = GraphicPoints(s.Substring(10));
+                    if (pts.Count == 0) { skipped++; continue; }
+                    Add(L, R, toL, toR, i => Graphic(pts, f[i]), points);
+                    continue;
+                }
                 var fm = FilterRe.Match(s);
                 if (fm.Success)
                 {
@@ -256,7 +263,7 @@ namespace DacEqSwitcher
                     if (c == null) { skipped++; continue; }
                     Add(L, R, toL, toR, i => MagDb(c, f[i]), points);
                 }
-                else if (Regex.IsMatch(low, @"^(filter\s*\d*|graphiceq|convolution|include)\s*:") && !low.Contains(" off"))
+                else if (Regex.IsMatch(low, @"^(filter\s*\d*|convolution|include)\s*:") && !low.Contains(" off"))
                     skipped++;
             }
             var res = new Response { Freqs = f, L = L, R = R, Skipped = skipped, Identical = true };
@@ -268,6 +275,32 @@ namespace DacEqSwitcher
                 if (m > res.PeakDb) { res.PeakDb = m; res.PeakHz = f[i]; }
             }
             return res;
+        }
+
+        static List<KeyValuePair<double, double>> GraphicPoints(string body)
+        {
+            var pts = new List<KeyValuePair<double, double>>();
+            foreach (var part in body.Split(';'))
+            {
+                var t = part.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                double fr, g;
+                if (t.Length == 2 && double.TryParse(t[0], NumberStyles.Float, Inv, out fr) && double.TryParse(t[1], NumberStyles.Float, Inv, out g) && fr > 0)
+                    pts.Add(new KeyValuePair<double, double>(fr, g));
+            }
+            return pts.OrderBy(p => p.Key).ToList();
+        }
+
+        /// Equalizer APO's GraphicEQ: linear in dB between points on a log-frequency axis.
+        static double Graphic(List<KeyValuePair<double, double>> pts, double f)
+        {
+            if (f <= pts[0].Key) return pts[0].Value;
+            for (int i = 1; i < pts.Count; i++)
+                if (f <= pts[i].Key)
+                {
+                    double t = Math.Log(f / pts[i - 1].Key) / Math.Log(pts[i].Key / pts[i - 1].Key);
+                    return pts[i - 1].Value + t * (pts[i].Value - pts[i - 1].Value);
+                }
+            return pts[pts.Count - 1].Value;
         }
 
         static void Add(double[] L, double[] R, bool toL, bool toR, Func<int, double> d, int n)

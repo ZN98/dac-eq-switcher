@@ -14,6 +14,8 @@ namespace DacEqSwitcher
         readonly FlowLayoutPanel rows;
         readonly ComboBox cboProfile;
         readonly Dictionary<string, int> now;
+        readonly CheckBox chkClearRef;
+        public bool DeleteRequested { get; private set; }
 
         sealed class Item
         {
@@ -22,15 +24,22 @@ namespace DacEqSwitcher
             public override string ToString() { return Text; }
         }
 
-        public RuleDialog(AppCore core, Rule rule, List<KeyValuePair<string, string>> profiles)
+        static ComboBox Combo(int width)
+        {
+            return new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = width, FlatStyle = FlatStyle.Flat, BackColor = Theme.Inset, ForeColor = Theme.Text, Font = Theme.Body };
+        }
+
+        public RuleDialog(AppCore core, Rule rule, bool existing)
         {
             this.core = core;
             this.rule = rule;
             HashSet<string> lastSeen;
             now = core.Values(out lastSeen);
 
-            Text = rule.Conditions.Count == 0 ? "Add rule" : "Edit rule";
-            Font = SystemFonts.MessageBoxFont;
+            Text = existing ? "Edit rule" : "New rule";
+            BackColor = Theme.Bg;
+            ForeColor = Theme.Text;
+            Font = Theme.Body;
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -38,28 +47,55 @@ namespace DacEqSwitcher
             ShowInTaskbar = false;
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            Padding = new Padding(14);
+            Padding = new Padding(18);
+            HandleCreated += (s, e) => Theme.DarkTitleBar(this);
 
-            var col = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill };
-            col.Controls.Add(new Label { Text = "When the DAC's", AutoSize = true, Margin = new Padding(0, 0, 0, 4) });
-            rows = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = new Padding(0) };
+            var col = Ui.Column();
+            col.Controls.Add(Ui.Text("When the DAC's", Theme.Body, Theme.Muted));
+            rows = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = new Padding(0, 6, 0, 0) };
             col.Controls.Add(rows);
-            var add = new LinkLabel { Text = "+ and another setting", AutoSize = true, Margin = new Padding(0, 4, 0, 10) };
-            add.LinkClicked += (s, e) => AddRow(null);
+            var add = new Btn("And another setting", Btn.Kinds.Link).WithIcon(Icons.Plus);
+            add.Width = add.GetPreferredSize(Size.Empty).Width;
+            add.Margin = new Padding(0, 2, 0, 12);
+            add.Click += (s, e) => AddRow(null);
             col.Controls.Add(add);
 
-            col.Controls.Add(new Label { Text = "use this EQ:", AutoSize = true, Margin = new Padding(0, 0, 0, 4) });
-            cboProfile = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
-            foreach (var p in profiles) cboProfile.Items.Add(new Item { Key = p.Key, Text = p.Value });
+            col.Controls.Add(Ui.Text("use this EQ", Theme.Body, Theme.Muted));
+            cboProfile = Combo(300);
+            cboProfile.Margin = new Padding(0, 6, 0, 0);
+            cboProfile.Items.Add(new Item { Key = "", Text = "No EQ" });
+            foreach (var p in core.Profiles.Names()) cboProfile.Items.Add(new Item { Key = p, Text = p });
             cboProfile.SelectedItem = cboProfile.Items.Cast<Item>().FirstOrDefault(i => (string)i.Key == rule.Profile) ?? cboProfile.Items[0];
             col.Controls.Add(cboProfile);
 
-            var ok = new Button { Text = "OK", AutoSize = true, Margin = new Padding(0, 14, 6, 0) };
+            if (rule.LoudnessRefDb.HasValue)
+            {
+                chkClearRef = new CheckBox
+                {
+                    Text = "Clear the loudness reference (" + rule.LoudnessRefDb.Value.ToString("0.0") + " dB)", AutoSize = true,
+                    ForeColor = Theme.Muted, Margin = new Padding(0, 12, 0, 0), FlatStyle = FlatStyle.Flat,
+                };
+                col.Controls.Add(chkClearRef);
+            }
+
+            var ok = new Btn("Save", Btn.Kinds.Accent) { Width = 96, Margin = new Padding(8, 0, 0, 0) };
             ok.Click += (s, e) => { if (Collect()) DialogResult = DialogResult.OK; };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(0, 14, 0, 0) };
-            var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.Right, Margin = new Padding(0) };
-            buttons.Controls.Add(ok);
-            buttons.Controls.Add(cancel);
+            var cancel = new Btn("Cancel") { Width = 96, DialogResult = DialogResult.Cancel, Margin = new Padding(8, 0, 0, 0) };
+            var buttons = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 18, 0, 0) };
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            if (existing)
+            {
+                var del = new Btn("Delete rule", Btn.Kinds.Link) { TextColor = Theme.Bad };
+                del.Width = del.GetPreferredSize(Size.Empty).Width;
+                del.Anchor = AnchorStyles.Left;
+                del.Click += (s, e) => { DeleteRequested = true; DialogResult = DialogResult.OK; };
+                buttons.Controls.Add(del, 0, 0);
+            }
+            buttons.Controls.Add(cancel, 2, 0);
+            buttons.Controls.Add(ok, 3, 0);
             col.Controls.Add(buttons);
             Controls.Add(col);
             AcceptButton = ok;
@@ -71,11 +107,12 @@ namespace DacEqSwitcher
 
         void AddRow(Condition c)
         {
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
-            var field = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
-            var isLbl = new Label { Text = "is", AutoSize = true, Margin = new Padding(6, 6, 6, 0) };
-            var value = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
-            var remove = new Button { Text = "✕", Width = 28, Margin = new Padding(6, 0, 0, 0) };
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+            var field = Combo(200);
+            var isLbl = Ui.Text("is", Theme.Body, Theme.Muted);
+            isLbl.Margin = new Padding(8, 6, 8, 0);
+            var value = Combo(230);
+            var remove = new Btn("", Btn.Kinds.Ghost) { Text = "✕", Width = 30, Height = 28, Margin = new Padding(6, 0, 0, 0), AccessibleName = "Remove this setting" };
             remove.Click += (s, e) => { if (rows.Controls.Count > 1) { rows.Controls.Remove(row); row.Dispose(); } };
 
             var fields = core.Fields.ToList();
@@ -125,6 +162,7 @@ namespace DacEqSwitcher
             if (conds.Count == 0) return false;
             rule.Conditions = conds;
             rule.Profile = (string)((Item)cboProfile.SelectedItem).Key;
+            if (chkClearRef != null && chkClearRef.Checked) rule.LoudnessRefDb = null;
             return true;
         }
     }

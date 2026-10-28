@@ -26,7 +26,7 @@ namespace DacEqSwitcher
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
                      ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             TabStop = true;
-            Height = 46;
+            Height = 34;
             Cursor = Cursors.Hand;
         }
 
@@ -81,14 +81,14 @@ namespace DacEqSwitcher
         {
             base.OnHandleCreated(e);
             using (var g = CreateGraphics()) scale = g.DpiX / 96f;
-            Height = (int)(46 * scale);
+            if (ShowMarks) Height = (int)(46 * scale);
         }
         RectangleF Track
         {
             get
             {
-                float s = scale, pad = 10 * s;
-                return new RectangleF(pad, 12 * s, Width - 2 * pad, 6 * s);
+                float s = scale, pad = 14 * s;
+                return new RectangleF(pad, (Height - 6 * s) / 2 - (ShowMarks ? 8 * s : 0), Width - 2 * pad, 6 * s);
             }
         }
         float X(int i) { var t = Track; return t.Left + t.Width * i / (float)(steps.Length - 1); }
@@ -173,49 +173,50 @@ namespace DacEqSwitcher
         protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); Invalidate(); }
 
         // -------------------------------------------------------------- paint --
+        /// Show dB marks under the track (off on Home, where the readout says it all).
+        public bool ShowMarks;
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            g.Clear(Parent != null ? Parent.BackColor : SystemColors.Control);
+            g.Clear(Parent != null ? Parent.BackColor : Theme.Bg);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             float s = g.DpiX / 96f;
             var t = Track;
-            Color accent = Enabled ? Color.FromArgb(37, 99, 235) : SystemColors.GrayText;
-            Color rail = Color.FromArgb(Enabled ? 70 : 40, ForeColor);
+            Color accent = Enabled ? Theme.Accent : Color.FromArgb(90, Theme.Accent);
 
-            using (var b = new SolidBrush(rail)) FillRound(g, b, t);
+            using (var b = new SolidBrush(Theme.Track)) FillRound(g, b, t);
             if (!double.IsNaN(Warn))
             {
                 int w = Array.FindIndex(steps, v => v > Warn);
                 if (w > 0)
-                    using (var b = new SolidBrush(Color.FromArgb(Enabled ? 90 : 40, 217, 120, 40)))
+                    using (var b = new SolidBrush(Enabled ? Theme.Loud : Color.FromArgb(90, Theme.Loud)))
                         FillRound(g, b, new RectangleF(X(w - 1), t.Top, t.Right - X(w - 1), t.Height));
             }
             float x = X(index);
             using (var b = new SolidBrush(accent)) FillRound(g, b, new RectangleF(t.Left, t.Top, Math.Max(t.Height, x - t.Left), t.Height));
 
-            // dB marks at their real positions
-            using (var tick = new Pen(Color.FromArgb(110, ForeColor)))
-            using (var txt = new SolidBrush(Color.FromArgb(Enabled ? 150 : 90, ForeColor)))
-            using (var font = new Font(Font.FontFamily, 7.5f))
-            {
-                foreach (var db in new[] { -90.0, -60, -40, -30, -20, -10, -5, 0 })
+            if (ShowMarks)
+                using (var tick = new Pen(Color.FromArgb(110, Theme.Muted)))
+                using (var txt = new SolidBrush(Theme.Muted))
+                using (var font = new Font(Font.FontFamily, 7.5f))
                 {
-                    int i = Array.IndexOf(steps, db);
-                    if (i < 0) continue;
-                    float mx = X(i);
-                    g.DrawLine(tick, mx, t.Bottom + 3 * s, mx, t.Bottom + 7 * s);
-                    string lab = db == 0 ? "0" : db.ToString("0");
-                    var sz = g.MeasureString(lab, font);
-                    g.DrawString(lab, font, txt, Math.Max(0, Math.Min(Width - sz.Width, mx - sz.Width / 2)), t.Bottom + 8 * s);
+                    foreach (var db in new[] { -90.0, -60, -40, -30, -20, -10, -5, 0 })
+                    {
+                        int i = Array.IndexOf(steps, db);
+                        if (i < 0) continue;
+                        float mx = X(i);
+                        g.DrawLine(tick, mx, t.Bottom + 3 * s, mx, t.Bottom + 7 * s);
+                        string lab = db == 0 ? "0" : db.ToString("0");
+                        var sz = g.MeasureString(lab, font);
+                        g.DrawString(lab, font, txt, Math.Max(0, Math.Min(Width - sz.Width, mx - sz.Width / 2)), t.Bottom + 8 * s);
+                    }
                 }
-            }
 
-            float r = (dragging ? 9 : 8) * s, cy = t.Top + t.Height / 2;
-            using (var b = new SolidBrush(SystemColors.Window)) g.FillEllipse(b, x - r, cy - r, 2 * r, 2 * r);
-            using (var p = new Pen(accent, 2.5f * s)) g.DrawEllipse(p, x - r, cy - r, 2 * r, 2 * r);
+            float r = (dragging ? 12 : 11) * s, cy = t.Top + t.Height / 2;
+            using (var b = new SolidBrush(Enabled ? Theme.Text : Theme.Muted)) g.FillEllipse(b, x - r, cy - r, 2 * r, 2 * r);
             if (Focused)
-                using (var p = new Pen(Color.FromArgb(120, accent), 1.5f * s)) g.DrawEllipse(p, x - r - 3 * s, cy - r - 3 * s, 2 * r + 6 * s, 2 * r + 6 * s);
+                using (var p = new Pen(Color.FromArgb(160, Theme.Accent), 2f * s)) g.DrawEllipse(p, x - r - 3 * s, cy - r - 3 * s, 2 * r + 6 * s, 2 * r + 6 * s);
         }
 
         static void FillRound(Graphics g, Brush b, RectangleF r)
