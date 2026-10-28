@@ -134,7 +134,6 @@ namespace DacEqSwitcher
             lblLoudDetail.AutoEllipsis = true;
             lblLoudDetail.Dock = DockStyle.Fill;
             lblLoudDetail.TextAlign = ContentAlignment.MiddleLeft;
-            lblLoudDetail.TextChanged += (s, e) => tipDetail.SetToolTip(lblLoudDetail, lblLoudDetail.Text);
             loudRow.Controls.Add(lblLoudDetail, 3, 0);
             loudRow.Controls.Add(btnSetRef, 4, 0);
             loudStrip.Controls.Add(loudRow);
@@ -339,34 +338,44 @@ namespace DacEqSwitcher
             loudStrip.Visible = Core.LoudnessOn && Core.EqOn;
             if (l == null || !loudStrip.Visible) return;
             btnSetRef.Enabled = connected;
+            string tip;
             if (!l.HasReference)
             {
                 lblLoudValue.Text = "No reference volume";
                 lblLoudDetail.Text = "";
+                tip = "Play music at your normal listening volume, then set it as the reference.";
             }
-            else if (l.BelowDb <= 0 || l.Curve == null)
+            else if (l.Plan == null)
             {
                 lblLoudValue.Text = "Off at this volume";
-                lblLoudDetail.Text = "At or above reference (" + Db(l.RefDb.Value) + ")";
+                lblLoudDetail.Text = "Reference " + Db(l.RefDb.Value);
+                tip = "Nothing is added at or above the reference volume (" + Db(l.RefDb.Value) + " on the DAC).";
             }
             else
             {
-                lblLoudValue.Text = "+" + l.BassDb.ToString("0") + " dB bass";
-                lblLoudDetail.Text = l.BelowDb + " dB below reference (" + Db(l.RefDb.Value) + ")";
+                var p = l.Plan;
+                lblLoudValue.Text = "+" + p.BassDb.ToString("0.0") + " dB at 50 Hz";
+                lblLoudDetail.Text = "Heard " + p.HeardBelow.ToString("0.0") + " dB below reference";
+                tip = "The DAC is " + p.KnobBelow.ToString("0.0") + " dB below the reference volume (" + Db(l.RefDb.Value) + ")." +
+                      (p.PreampDb < 0 ? "\nThe extra bass is made by lowering everything else by " + (-p.PreampDb).ToString("0.0") +
+                                         " dB, so it can't clip:\nyou hear " + p.HeardBelow.ToString("0.0") + " dB below the reference, and the correction is for that level." : "");
             }
+            tipDetail.SetToolTip(lblLoudDetail, tip);
+            tipDetail.SetToolTip(lblLoudValue, tip);
         }
 
         void RefreshGraph()
         {
             var l = Core.LoudnessNow;
             string profile = Core.EqOn ? Core.ActiveProfile : null;
-            string key = profile + "|" + (l != null && l.Curve != null ? string.Join(",", l.Curve.Select(x => x.ToString("0.0"))) : "-");
+            var plan = l == null ? null : l.Plan;
+            string key = profile + "|" + (plan != null ? string.Join(",", plan.Curve.Select(x => x.ToString("0.0"))) + plan.PreampDb : "-");
             if (key == graphKey) return;
             graphKey = key;
             string text = "";
             try { if (!string.IsNullOrEmpty(profile)) text = Core.Profiles.Read(profile); } catch { }
             graph.Data = EqText.Analyse(text);
-            string loud = l != null && l.Curve != null ? Loudness.ApoText(l.Curve, "") : null;
+            string loud = Loudness.ApoText(plan, "");
             graph.Overlay = loud == null ? null : EqText.Analyse(text + "\r\n" + loud);
             legend.Visible = loud != null;
         }

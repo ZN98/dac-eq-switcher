@@ -221,10 +221,10 @@ namespace DacEqSwitcher
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
         static readonly Regex DbRe = new Regex(@"(-?[\d.]+)\s*dB", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public static Response Analyse(string text, int points = 200)
+        public static Response Analyse(string text, int points = 200, double lo = 20, double hi = 20000)
         {
             var f = new double[points];
-            for (int i = 0; i < points; i++) f[i] = 20 * Math.Pow(1000, i / (double)(points - 1));
+            for (int i = 0; i < points; i++) f[i] = lo * Math.Pow(hi / lo, i / (double)(points - 1));
             var L = new double[points];
             var R = new double[points];
             bool toL = true, toR = true;

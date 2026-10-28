@@ -34,11 +34,24 @@ namespace DacEqSwitcher
             float W = Width - L - Rm, H = Height - T - B;
             if (W < 20 || H < 20) return;
 
+            // Home: one line per curve (left/right averaged); the loudness curve is lined up with
+            // the EQ at 1 kHz, so its anti-clipping preamp doesn't make it look quieter
+            double[] eqMean = Simple && data != null ? Mean(data) : null, ovMean = null;
+            if (Simple && overlay != null)
+            {
+                ovMean = Mean(overlay);
+                if (eqMean != null)
+                {
+                    int k = Nearest(overlay.Freqs, 1000);
+                    double shift = eqMean[k] - ovMean[k];
+                    for (int i = 0; i < ovMean.Length; i++) ovMean[i] += shift;
+                }
+            }
+            var series = Simple ? new[] { eqMean, ovMean } : new[] { data == null ? null : data.L, data == null ? null : data.R, overlay == null ? null : overlay.L, overlay == null ? null : overlay.R };
             double lo = -18, hi = 6;
-            foreach (var r in new[] { data, overlay })
-                if (r != null)
-                    foreach (var arr in new[] { r.L, r.R })
-                        foreach (var v in arr) { lo = Math.Min(lo, Math.Floor(v / 6) * 6); hi = Math.Max(hi, Math.Ceiling(v / 6) * 6); }
+            foreach (var arr in series)
+                if (arr != null)
+                    foreach (var v in arr) { lo = Math.Min(lo, Math.Floor(v / 6) * 6); hi = Math.Max(hi, Math.Ceiling(v / 6) * 6); }
             lo = Math.Max(lo, -60); hi = Math.Min(hi, 30);
             Func<double, float> X = f => L + W * (float)(Math.Log10(f / 20) / 3);
             Func<double, float> Y = db => T + H * (float)((hi - Math.Max(lo, Math.Min(hi, db))) / (hi - lo));
@@ -69,21 +82,8 @@ namespace DacEqSwitcher
             }
             if (Simple)
             {
-                // Home: one line per curve (left/right averaged); the loudness curve is lined up
-                // with the EQ at 1 kHz, so its anti-clipping preamp doesn't make it look quieter
-                var eq = data == null ? null : Mean(data);
-                if (overlay != null)
-                {
-                    var o = Mean(overlay);
-                    if (eq != null)
-                    {
-                        int k = Nearest(overlay.Freqs, 1000);
-                        double shift = eq[k] - o[k];
-                        for (int i = 0; i < o.Length; i++) o[i] += shift;
-                    }
-                    Draw(g, overlay, o, Color.FromArgb(150, Theme.Accent), X, Y, sc, true);
-                }
-                if (eq != null) Draw(g, data, eq, Theme.Accent, X, Y, sc, false);
+                if (ovMean != null) Draw(g, overlay, ovMean, Color.FromArgb(150, Theme.Accent), X, Y, sc, true);
+                if (eqMean != null) Draw(g, data, eqMean, Theme.Accent, X, Y, sc, false);
                 return;
             }
             if (overlay != null) Draw(g, overlay, overlay.L, Color.FromArgb(150, Theme.Accent), X, Y, sc, true);

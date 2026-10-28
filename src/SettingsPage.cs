@@ -19,7 +19,7 @@ namespace DacEqSwitcher
         Protocol dacBuilt = (Protocol)(-1);
         readonly Dictionary<string, Dropdown> dx5Boxes = new Dictionary<string, Dropdown>();
         readonly HashSet<Control> busy = new HashSet<Control>();
-        static readonly int[] Strengths = { 40, 60, 80, 100 }, Boosts = { 6, 9, 12, 15 }, Refs = { 75, 80, 85 };
+        static readonly int[] Strengths = { 40, 60, 80, 100 }, Boosts = { 12, 15, 20, 0 }, Refs = { 70, 75, 80 };
         // shown on Home, so not repeated here
         static readonly HashSet<string> OnHome = new HashSet<string> { "highGain", "inputType", "pcmFilter", "muted" };
 
@@ -56,13 +56,15 @@ namespace DacEqSwitcher
             segStrength = new Segmented(Strengths.Select(x => x + " %").ToArray()) { Width = 280 };
             segStrength.Committed += i => SetLoud(() => Core.Settings.LoudnessStrength = Strengths[i]);
             AddRow(loud, "Strength", segStrength);
-            segBoost = new Segmented(Boosts.Select(x => "+" + x + " dB").ToArray()) { Width = 280 };
+            segBoost = new Segmented(Boosts.Select(x => x == 0 ? "No limit" : "+" + x + " dB").ToArray()) { Width = 280 };
             segBoost.Committed += i => SetLoud(() => Core.Settings.LoudnessMaxBoost = Boosts[i]);
             AddRow(loud, "Largest boost", segBoost);
             segRef = new Segmented(Refs.Select(x => x + " phon").ToArray()) { Width = 280 };
             segRef.Committed += i => SetLoud(() => Core.Settings.LoudnessRefPhon = Refs[i]);
             AddRow(loud, "Reference loudness", segRef);
-            var note = Ui.Text("Based on the ISO 226:2003 equal-loudness contours. The reference volume is set per rule on Home.", Theme.Small, Theme.Muted);
+            var note = Ui.Text("ISO 226:2003 equal-loudness contours. 100 % and no limit is the standard; the extra bass is made by\n" +
+                               "lowering everything else, so no frequency is ever louder than at your reference volume.\n" +
+                               "The reference volume is set per rule on Home.", Theme.Small, Theme.Muted);
             note.Margin = new Padding(0, 4, 0, 0);
             loud.Controls.Add(note);
 

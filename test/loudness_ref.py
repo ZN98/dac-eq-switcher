@@ -1,5 +1,6 @@
-# Independent ISO 226:2003 reference (formula and table as published) for the C# implementation.
-import math, sys
+# Independent ISO 226:2003 reference (the standard's tables and eq. 1, as published) for the C# code.
+# Prints Lp (dB SPL) at the 29 standard frequencies for 20, 30 ... 90 phon, one line per level.
+import math
 F=[20,25,31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500]
 AF=[0.532,0.506,0.480,0.455,0.432,0.409,0.387,0.367,0.349,0.330,0.315,0.301,0.288,0.276,0.267,0.259,0.253,0.250,0.246,0.244,0.243,0.243,0.243,0.242,0.242,0.245,0.254,0.271,0.301]
 LU=[-31.6,-27.2,-23.0,-19.1,-15.9,-13.0,-10.3,-8.1,-6.2,-4.5,-3.1,-2.0,-1.1,-0.4,0.0,0.3,0.5,0.0,-2.7,-4.1,-1.0,1.7,2.5,1.2,-2.1,-7.1,-11.2,-10.7,-3.1]
@@ -7,6 +8,5 @@ TF=[78.5,68.7,59.5,51.1,44.0,37.5,31.5,26.5,22.1,17.9,14.4,11.4,8.6,6.2,4.4,3.0,
 def spl(i,p):
     a=4.47e-3*(10**(0.025*p)-1.15)+(0.4*10**(((TF[i]+LU[i])/10)-9))**AF[i]
     return 10/AF[i]*math.log10(a)-LU[i]+94
-for listen,ref,s,m in [(60,80,1.0,99),(50,80,0.6,12),(70,80,0.6,12)]:
-    g=[max(-m,min(m,s*((spl(i,listen)-spl(17,listen))-(spl(i,ref)-spl(17,ref))))) for i in range(len(F))]
-    print(" ".join(f"{x:.3f}" for x in g))
+for p in range(20,91,10):
+    print(" ".join(f"{spl(i,p):.5f}" for i in range(len(F))))

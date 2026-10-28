@@ -32,15 +32,22 @@ GETTING STARTED
 LOUDNESS COMPENSATION
   Our ears hear less bass (and some treble) at low volume. With Loudness on (Home,
   under the EQ switch), the app adds back the difference between the ISO 226:2003
-  equal-loudness contours at your reference volume and at the current volume, on top
-  of the active EQ, and lowers the preamp so it can't clip.
-    - Play something at your normal "loud enough" volume and click "Set current
-      volume as reference". Each rule keeps its own reference (headphones and
-      speakers differ); the strip shows how far below it you are and the bass added.
-    - At or above the reference nothing is added. Turning down adds more, in 1 dB
-      steps, updated a moment after the volume stops moving.
-    - Settings > Loudness: strength (60 % by default, as full compensation sounds
-      bassy to most people), largest boost, and the reference loudness in phon.
+  equal-loudness contours at your reference level and at the level you're hearing,
+  so every frequency is heard in the same balance as at the reference.
+    - Play something at your normal listening volume and click "Set current volume
+      as reference". Each rule keeps its own reference (headphones and speakers differ).
+    - At or above the reference nothing is added. Below it, the correction follows the
+      DAC volume in 0.5 dB steps, updated a moment after the volume stops moving.
+    - The DAC's volume comes after Equalizer APO, so the extra bass can only be made by
+      lowering everything else (otherwise it would clip). The app does this as little as
+      your EQ allows, and works out the correction for the level you actually hear,
+      shown on Home as "Heard N dB below reference". Because of that cut, turning the
+      DAC down lowers the mids and treble faster than the knob suggests (about twice as
+      fast with the full correction); no frequency is ever louder than at the reference.
+    - Settings > Loudness: strength and largest boost (the standard is 100 % with no
+      limit), and the loudness your reference volume corresponds to (70-80 phon, the
+      range the standard covers at every frequency). The standard has no data below
+      20 phon or outside 20 Hz - 12.5 kHz; there the nearest correction is held.
 
 DAC CONTROLS
   Everything toppingctl can change for your model is in the app:
