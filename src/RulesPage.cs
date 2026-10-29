@@ -63,7 +63,7 @@ namespace DacEqSwitcher
             ddDefault.SetItems(defaultItems);
             ddDefault.SelectedIndex = Math.Max(0, defaultItems.IndexOf(Core.Settings.DefaultProfile));
 
-            string k = string.Join("\n", rules.Select(r => Core.RuleText(r) + "|" + r.Profile + "|" + r.LoudnessRefDb + "|" + (r == Core.ActiveRule && Core.Monitor.Connected)));
+            string k = string.Join("\n", rules.Select(r => Core.RuleText(r) + "|" + r.Profile + "|" + (r == Core.ActiveRule && Core.Monitor.Connected)));
             if (k == key) return;
             key = k;
             list.SuspendLayout();
@@ -86,11 +86,9 @@ namespace DacEqSwitcher
             for (int k = 0; k < 5; k++) t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var cond = Ui.Text((i + 1) + ".  " + Core.RuleText(r), Theme.Body, Theme.Muted);
             cond.AutoEllipsis = true;
-            string extra = r.LoudnessRefDb.HasValue ? "    Loudness reference " + r.LoudnessRefDb.Value.ToString("0.0") + " dB" : "";
             var prof = Ui.Text((string.IsNullOrEmpty(r.Profile) ? "No EQ" : r.Profile), Theme.F(10.5f, FontStyle.Bold));
-            var ref_ = Ui.Text(extra, Theme.Small, Theme.Muted);
             t.Controls.Add(cond, 0, 0);
-            t.Controls.Add(Ui.Row(prof, ref_), 0, 1);
+            t.Controls.Add(prof, 0, 1);
             if (active)
             {
                 var now = Ui.Text("Now", Theme.F(8f, FontStyle.Bold), Theme.Accent);
@@ -160,7 +158,7 @@ namespace DacEqSwitcher
         {
             var copy = new Rule
             {
-                Profile = rule.Profile, LoudnessRefDb = rule.LoudnessRefDb,
+                Profile = rule.Profile,
                 Conditions = rule.Conditions.Select(c => new Condition { Field = c.Field, Value = c.Value }).ToList(),
             };
             using (var d = new RuleDialog(core, copy, true))

@@ -21,7 +21,6 @@ namespace DacEqSwitcher
     {
         [DataMember] public List<Condition> Conditions = new List<Condition>();
         [DataMember] public string Profile = "";   // "" = no EQ
-        [DataMember] public double? LoudnessRefDb;  // DAC volume at which this EQ needs no loudness compensation
     }
 
     [DataContract]
@@ -37,12 +36,6 @@ namespace DacEqSwitcher
         [DataMember] public string NotifiedEapo;
         [DataMember] public bool EqOff;               // master switch; default (false) = EQ on
         [DataMember] public string LastProfile;       // last EQ the rules picked, used until the DAC is seen
-        [DataMember] public bool LoudnessOff;         // default (false) = on, once a reference volume is set
-        [DataMember] public double? DefaultLoudnessRefDb;   // reference when no rule matches
-        [DataMember] public int LoudnessStrength = 100;     // % of the ISO 226 correction (100 = the standard)
-        [DataMember] public int LoudnessMaxBoost = 12;      // dB; also the headroom kept at every volume
-        [DataMember] public int LoudnessRefPhon = 80;       // level music is balanced for
-        [DataMember] public int LoudnessVersion;            // 2: 100 % strength; 3: fixed headroom
         [DataMember] public bool MuteOptical;               // DX1 II mute also mutes the optical output
 
         void Fix()
@@ -51,15 +44,6 @@ namespace DacEqSwitcher
             foreach (var r in Rules) { if (r.Conditions == null) r.Conditions = new List<Condition>(); if (r.Profile == null) r.Profile = ""; }
             if (DefaultProfile == null) DefaultProfile = "";
             if (LastSeen == null) LastSeen = new Dictionary<string, int>();
-            if (LoudnessVersion < 2)
-            {
-                // 2.2.12 defaulted to 60 %; start everyone on the standard
-                LoudnessStrength = 100; LoudnessRefPhon = 80; LoudnessVersion = 2;
-            }
-            if (LoudnessVersion < 3) { LoudnessMaxBoost = 12; LoudnessVersion = 3; }   // headroom is now reserved for it
-            if (LoudnessStrength <= 0 || LoudnessStrength > 100) LoudnessStrength = 100;
-            if (LoudnessMaxBoost < 3 || LoudnessMaxBoost > 30) LoudnessMaxBoost = 12;
-            if (LoudnessRefPhon < 60 || LoudnessRefPhon > (int)Loudness.MaxRefPhon) LoudnessRefPhon = 80;
         }
 
         static DataContractJsonSerializer Ser()
@@ -310,77 +294,13 @@ namespace DacEqSwitcher
         }
 
         const string OffText = "# DAC EQ Switcher: EQ switched off\r\n";
-        string writtenKey;   // what the active file holds
+        string writtenKey;   // what the active file holds: "off" or "on:<profile>"
 
-        // ------------------------------------------------------------- loudness --
-        public sealed class LoudnessState
-        {
-            public bool On, HasReference;
-            public double? RefDb, VolumeDb;
-            public Loudness.Plan Plan;   // what's applied; null when nothing is added
-        }
-
-        double appliedBelow = -2;        // DAC volume below the reference the file is for; -1 = loudness inactive, -2 = unknown
-        string planKey, headroomKey;
-        double headroom;
-        Loudness.Plan plan;
-        System.Threading.Timer loudTimer;
-        public LoudnessState LoudnessNow { get; private set; }
-
-        public bool LoudnessOn { get { return !Settings.LoudnessOff; } }
-
-        double? ReferenceFor(Rule r) { return r != null ? r.LoudnessRefDb : Settings.DefaultLoudnessRefDb; }
-
-        public double? CurrentVolumeDb()
-        {
-            var h = Monitor.Handler;
-            return h == null || !Monitor.Connected ? null : h.VolumeDb(Monitor.Snapshot());
-        }
-
-        public void SetLoudnessOn(bool on)
-        {
-            if (on == LoudnessOn) return;
-            Settings.LoudnessOff = !on;
-            SaveSettings();
-            Changed();
-        }
-
-        /// Makes the current DAC volume the reference for the EQ that's playing now.
-        public bool SetLoudnessReference()
-        {
-            var v = CurrentVolumeDb();
-            if (!v.HasValue) return false;
-            if (ActiveRule != null) ActiveRule.LoudnessRefDb = v.Value; else Settings.DefaultLoudnessRefDb = v.Value;
-            SaveSettings();
-            Changed();
-            return true;
-        }
-
-        Loudness.Plan PlanFor(double below, string profile, string body)
-        {
-            if (below < 0) return null;
-            string hk = profile + "|" + body + "|" + Settings.LoudnessStrength + "/" + Settings.LoudnessMaxBoost + "/" + Settings.LoudnessRefPhon;
-            if (hk != headroomKey)
-            {
-                headroom = Loudness.Headroom(body, Settings.LoudnessRefPhon, Settings.LoudnessStrength / 100.0, Settings.LoudnessMaxBoost);
-                headroomKey = hk;
-            }
-            string k = below + "|" + hk;
-            if (k != planKey)
-            {
-                plan = Loudness.Make(headroom, below, Settings.LoudnessRefPhon, Settings.LoudnessStrength / 100.0, Settings.LoudnessMaxBoost);
-                planKey = k;
-            }
-            return plan;
-        }
-
-        /// Re-picks the EQ. force: rewrite even if nothing changed (after a profile was edited).
-        /// settle: apply a loudness change now rather than waiting for the volume to stop moving.
-        public void Evaluate(bool force, bool settle = false)
+        /// Re-picks the EQ. force: rewrite even if the same profile (after it was edited).
+        public void Evaluate(bool force)
         {
             lock (evalLock)
             {
-                double? volume = null;
                 if (Monitor.Connected)
                 {
                     HashSet<string> ls;
@@ -392,57 +312,24 @@ namespace DacEqSwitcher
                     if (ActiveProfile != target) Log.Write("EQ -> " + (target == "" ? "(none)" : target));
                     ActiveProfile = target;
                     if (Settings.LastProfile != target) { Settings.LastProfile = target; SaveSettings(); }
-                    volume = Monitor.Handler != null ? Monitor.Handler.VolumeDb(vals) : null;
                 }
                 else if (ActiveProfile == null && Settings.LastProfile != null)
                     ActiveProfile = Profiles.Exists(Settings.LastProfile) ? Settings.LastProfile : "";
-
-                // Loudness: follows the DAC volume in 0.5 dB steps below the reference; held while the DAC is away
-                double? reference = ReferenceFor(ActiveRule);
-                double below = appliedBelow;
-                if (Monitor.Connected)
-                    below = LoudnessOn && reference.HasValue && volume.HasValue ? Math.Max(0, Math.Round((reference.Value - volume.Value) * 2) / 2) : -1;
-                string baseKey = EqOn ? "on:" + ActiveProfile : "off";
-                bool profileChanged = writtenKey == null || !writtenKey.StartsWith(baseKey + "|");
-                if (below != appliedBelow)
-                {
-                    if (settle || force || profileChanged || appliedBelow < 0 || below < 0) appliedBelow = below;
-                    else
-                    {
-                        // the knob is moving: wait until it settles so Equalizer APO isn't reloaded constantly
-                        if (loudTimer == null) loudTimer = new System.Threading.Timer(_ => { Evaluate(false, true); Raise(); });
-                        loudTimer.Change(300, System.Threading.Timeout.Infinite);
-                    }
-                }
                 // While the DAC is away the last EQ is kept; until one is known there's nothing to apply
-                if (EqOn && ActiveProfile == null)
-                {
-                    LoudnessNow = new LoudnessState { On = LoudnessOn, HasReference = reference.HasValue, RefDb = reference, VolumeDb = volume };
-                    return;
-                }
-                string body = "";
-                if (EqOn && ActiveProfile != "")
-                {
-                    try { body = Profiles.Read(ActiveProfile); }
-                    catch (Exception ex) { body = "# couldn't read profile: " + ex.Message + "\r\n"; }
-                }
-                var p = EqOn ? PlanFor(appliedBelow, ActiveProfile, body) : null;
-                LoudnessNow = new LoudnessState { On = LoudnessOn, HasReference = reference.HasValue, RefDb = reference, VolumeDb = volume, Plan = p };
-
-                string key = baseKey + "|" + (p == null ? "-" : planKey);
+                if (EqOn && ActiveProfile == null) return;
+                string key = EqOn ? "on:" + ActiveProfile : "off";
                 if (!force && key == writtenKey && WriteError == null) return;
 
                 string text;
                 if (!EqOn) text = OffText;
+                else if (ActiveProfile == "") text = "# DAC EQ Switcher: no EQ for the DAC's current settings\r\n";
                 else
                 {
-                    if (ActiveProfile == "") text = "# DAC EQ Switcher: no EQ for the DAC's current settings\r\n";
-                    else text = "# DAC EQ Switcher: active EQ \"" + ActiveProfile + "\" (edit it in the app, not here)\r\n"
-                              + body.TrimEnd() + "\r\nChannel: all\r\n";
-                    var inv = System.Globalization.CultureInfo.InvariantCulture;
-                    string loud = p == null ? null : Loudness.ApoText(p, "Loudness compensation (ISO 226): " + p.KnobBelow.ToString("0.0", inv)
-                                                      + " dB below reference, " + p.HeadroomDb.ToString("0.00", inv) + " dB headroom kept at every volume");
-                    if (loud != null) text += "\r\n" + loud;
+                    string body;
+                    try { body = Profiles.Read(ActiveProfile); }
+                    catch (Exception ex) { body = "# couldn't read profile: " + ex.Message + "\r\n"; }
+                    text = "# DAC EQ Switcher: active EQ \"" + ActiveProfile + "\" (edit it in the app, not here)\r\n"
+                         + body.TrimEnd() + "\r\nChannel: all\r\n";
                 }
                 string err = null;
                 if (force || text != written)
@@ -454,12 +341,6 @@ namespace DacEqSwitcher
             }
         }
 
-        void Raise()
-        {
-            var h = StateChanged;
-            if (h != null) h();
-        }
-
         public void Changed()
         {
             Evaluate(true);
@@ -469,7 +350,6 @@ namespace DacEqSwitcher
 
         public void Dispose()
         {
-            if (loudTimer != null) loudTimer.Dispose();
             Updater.Dispose();
             Monitor.Dispose();
         }

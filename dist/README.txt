@@ -5,8 +5,7 @@ Switches your Equalizer APO EQ automatically when you change a setting on your
 Topping DAC: output (headphones / line out), input, headphone gain, PCM filter,
 the DAC's own EQ preset, sample rate and more. You choose which settings
 trigger which EQ. It also replaces the Topping web app: every DAC setting toppingctl
-can change is in the app, and it can add loudness compensation that keeps bass and
-treble balanced as you turn the volume down.
+can change is in the app.
 
 Supported DACs are the ones toppingctl can read: Topping DX1 II and DX5 II.
 (toppingctl also knows the D90 III Discrete, but can't read its settings yet.)
@@ -28,27 +27,6 @@ GETTING STARTED
      match wins.
   5. Settings (gear icon): tick "Start with Windows". Close the window: the app keeps running in the
      notification area (click its icon to reopen it).
-
-LOUDNESS COMPENSATION
-  Our ears hear less bass (and some treble) at low volume. With Loudness on (Home,
-  under the EQ switch), the app adds back the difference between the ISO 226:2003
-  equal-loudness contours at your reference level and at the level you're hearing,
-  so every frequency is heard in the same balance as at the reference.
-    - Play something at your normal listening volume and click "Set current volume
-      as reference". Each rule keeps its own reference (headphones and speakers differ).
-    - At or above the reference nothing is added. Below it, the correction follows the
-      DAC volume in 0.5 dB steps, updated a moment after the volume stops moving.
-    - The DAC's volume comes after Equalizer APO, so the extra bass can only be made by
-      lowering everything else (otherwise it would clip). The app keeps that headroom
-      the same at every volume, so turning the DAC down lowers the level exactly as much
-      as the knob says. Switching Loudness on therefore makes everything quieter by that
-      amount (up to the largest boost, less if your EQ already has headroom): turn the
-      DAC up once to match, then set the reference.
-    - Settings > Loudness: strength (100 % is the standard), largest boost (6-15 dB,
-      12 by default; also the headroom kept), and the loudness your reference volume
-      corresponds to (70-80 phon, the range the standard covers at every frequency).
-      The standard has no data below 20 phon or outside 20 Hz - 12.5 kHz; there the
-      nearest correction is held.
 
 DAC CONTROLS
   Everything toppingctl can change for your model is in the app:

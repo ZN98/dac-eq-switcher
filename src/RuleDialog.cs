@@ -14,7 +14,6 @@ namespace DacEqSwitcher
         readonly FlowLayoutPanel rows;
         readonly ComboBox cboProfile;
         readonly Dictionary<string, int> now;
-        readonly CheckBox chkClearRef;
         public bool DeleteRequested { get; private set; }
 
         sealed class Item
@@ -67,16 +66,6 @@ namespace DacEqSwitcher
             foreach (var p in core.Profiles.Names()) cboProfile.Items.Add(new Item { Key = p, Text = p });
             cboProfile.SelectedItem = cboProfile.Items.Cast<Item>().FirstOrDefault(i => (string)i.Key == rule.Profile) ?? cboProfile.Items[0];
             col.Controls.Add(cboProfile);
-
-            if (rule.LoudnessRefDb.HasValue)
-            {
-                chkClearRef = new CheckBox
-                {
-                    Text = "Clear the loudness reference (" + rule.LoudnessRefDb.Value.ToString("0.0") + " dB)", AutoSize = true,
-                    ForeColor = Theme.Muted, Margin = new Padding(0, 12, 0, 0), FlatStyle = FlatStyle.Flat,
-                };
-                col.Controls.Add(chkClearRef);
-            }
 
             var ok = new Btn("Save", Btn.Kinds.Accent) { Width = 96, Margin = new Padding(8, 0, 0, 0) };
             ok.Click += (s, e) => { if (Collect()) DialogResult = DialogResult.OK; };
@@ -162,7 +151,6 @@ namespace DacEqSwitcher
             if (conds.Count == 0) return false;
             rule.Conditions = conds;
             rule.Profile = (string)((Item)cboProfile.SelectedItem).Key;
-            if (chkClearRef != null && chkClearRef.Checked) rule.LoudnessRefDb = null;
             return true;
         }
     }

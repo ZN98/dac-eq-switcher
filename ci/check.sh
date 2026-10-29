@@ -27,11 +27,4 @@ mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/ToggleTest.
 T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data"; touch "$T/eapo/config.txt"
 DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
     timeout 120 mono build/DacEqTest.exe || { echo "EQ on/off test failed"; fail=1; }
-# Loudness compensation against an independent ISO 226:2003 reference
-mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/LoudnessTest.cs
-python3 test/loudness_ref.py | timeout 60 mono build/DacEqTest.exe || { echo "loudness test failed"; fail=1; }
-mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/LoudnessAppTest.cs
-T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data"; touch "$T/eapo/config.txt"
-DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
-    timeout 120 mono build/DacEqTest.exe || { echo "loudness app test failed"; fail=1; }
 exit $fail

@@ -6,12 +6,11 @@ using System.Windows.Forms;
 
 namespace DacEqSwitcher
 {
-    /// Settings: general, loudness, the DAC's less-used settings, Equalizer APO, about.
+    /// Settings: general, the DAC's less-used settings, Equalizer APO, about.
     sealed class SettingsPage : Page
     {
         readonly TableLayoutPanel col;
         readonly Switch swStartup, swUpdates, swMuteOpt;
-        readonly Segmented segStrength, segBoost, segRef;
         readonly Label lblEapo, lblUpdate;
         readonly Btn btnEapoFix, btnCheck;
         readonly TableLayoutPanel dacRows;
@@ -19,7 +18,6 @@ namespace DacEqSwitcher
         Protocol dacBuilt = (Protocol)(-1);
         readonly Dictionary<string, Dropdown> dx5Boxes = new Dictionary<string, Dropdown>();
         readonly HashSet<Control> busy = new HashSet<Control>();
-        static readonly int[] Strengths = { 40, 60, 80, 100 }, Boosts = { 6, 9, 12, 15 }, Refs = { 70, 75, 80 };
         // shown on Home, so not repeated here
         static readonly HashSet<string> OnHome = new HashSet<string> { "highGain", "inputType", "pcmFilter", "muted" };
 
@@ -51,23 +49,6 @@ namespace DacEqSwitcher
             btnCheck.Click += (s, e) => { Core.Updater.CheckNow(); lblUpdate.Text = "Checking…"; };
             AddRow(general, lblUpdate, btnCheck);
 
-            // loudness
-            var loud = Section("Loudness compensation");
-            segStrength = new Segmented(Strengths.Select(x => x + " %").ToArray()) { Width = 280 };
-            segStrength.Committed += i => SetLoud(() => Core.Settings.LoudnessStrength = Strengths[i]);
-            AddRow(loud, "Strength", segStrength);
-            segBoost = new Segmented(Boosts.Select(x => "+" + x + " dB").ToArray()) { Width = 280 };
-            segBoost.Committed += i => SetLoud(() => Core.Settings.LoudnessMaxBoost = Boosts[i]);
-            AddRow(loud, "Largest boost", segBoost);
-            segRef = new Segmented(Refs.Select(x => x + " phon").ToArray()) { Width = 280 };
-            segRef.Committed += i => SetLoud(() => Core.Settings.LoudnessRefPhon = Refs[i]);
-            AddRow(loud, "Reference loudness", segRef);
-            var note = Ui.Text("ISO 226:2003 equal-loudness contours (100 % is the standard). The largest boost is also the headroom\n" +
-                               "kept at every volume (less if your EQ already has some), so the level follows the DAC smoothly\n" +
-                               "and nothing clips. The reference volume is set per rule on Home.", Theme.Small, Theme.Muted);
-            note.Margin = new Padding(0, 4, 0, 0);
-            loud.Controls.Add(note);
-
             // DAC
             var dac = Section("DAC");
             dacRows = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0) };
@@ -93,7 +74,6 @@ namespace DacEqSwitcher
             var about = Section("About");
             var a = Ui.Text("DAC EQ Switcher " + Updater.Current + "\n" +
                             "DAC support from toppingctl (rev " + ToppingTables.Revision + ", Apache-2.0)\n" +
-                            "Loudness: ISO 226:2003 equal-loudness contours\n" +
                             "Not affiliated with Topping", Theme.Body, Theme.Muted);
             about.Controls.Add(a);
 
@@ -129,13 +109,6 @@ namespace DacEqSwitcher
             section.Controls.Add(row);
         }
 
-        void SetLoud(Action change)
-        {
-            change();
-            Core.SaveSettings();
-            Core.Changed();
-        }
-
         public override void RefreshState()
         {
             swStartup.Checked = Startup.Enabled;
@@ -143,9 +116,6 @@ namespace DacEqSwitcher
             var up = Core.Updater.Available;
             lblUpdate.Text = up != null ? "Version " + up.Tag + " is available (you have " + Updater.Current + ")" : "Version " + Updater.Current;
             lblUpdate.ForeColor = up != null ? Theme.Accent : Theme.Muted;
-            segStrength.SelectedIndex = Array.IndexOf(Strengths, Core.Settings.LoudnessStrength);
-            segBoost.SelectedIndex = Array.IndexOf(Boosts, Core.Settings.LoudnessMaxBoost);
-            segRef.SelectedIndex = Array.IndexOf(Refs, Core.Settings.LoudnessRefPhon);
             RefreshEapo();
             RefreshDac();
         }

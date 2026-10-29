@@ -6,11 +6,10 @@ using System.Windows.Forms;
 
 namespace DacEqSwitcher
 {
-    /// Frequency-response plot of an EQ (left/right), optionally with a second, dashed curve
-    /// (the EQ with loudness compensation added).
+    /// Frequency-response plot of an EQ (left/right).
     sealed class ResponseGraph : Control
     {
-        EqText.Response data, overlay;
+        EqText.Response data;
         public bool Simple;   // Home: no grid labels, zero line only
 
         public ResponseGraph()
@@ -22,7 +21,6 @@ namespace DacEqSwitcher
         }
 
         public EqText.Response Data { get { return data; } set { data = value; Invalidate(); } }
-        public EqText.Response Overlay { get { return overlay; } set { overlay = value; Invalidate(); } }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -34,20 +32,9 @@ namespace DacEqSwitcher
             float W = Width - L - Rm, H = Height - T - B;
             if (W < 20 || H < 20) return;
 
-            // Home: one line per curve (left/right averaged); the loudness curve is lined up with
-            // the EQ at 1 kHz, so its anti-clipping preamp doesn't make it look quieter
-            double[] eqMean = Simple && data != null ? Mean(data) : null, ovMean = null;
-            if (Simple && overlay != null)
-            {
-                ovMean = Mean(overlay);
-                if (eqMean != null)
-                {
-                    int k = Nearest(overlay.Freqs, 1000);
-                    double shift = eqMean[k] - ovMean[k];
-                    for (int i = 0; i < ovMean.Length; i++) ovMean[i] += shift;
-                }
-            }
-            var series = Simple ? new[] { eqMean, ovMean } : new[] { data == null ? null : data.L, data == null ? null : data.R, overlay == null ? null : overlay.L, overlay == null ? null : overlay.R };
+            // Home: one line (left/right averaged)
+            double[] eqMean = Simple && data != null ? Mean(data) : null;
+            var series = Simple ? new[] { eqMean } : new[] { data == null ? null : data.L, data == null ? null : data.R };
             double lo = -18, hi = 6;
             foreach (var arr in series)
                 if (arr != null)
@@ -82,11 +69,9 @@ namespace DacEqSwitcher
             }
             if (Simple)
             {
-                if (ovMean != null) Draw(g, overlay, ovMean, Color.FromArgb(150, Theme.Accent), X, Y, sc, true);
                 if (eqMean != null) Draw(g, data, eqMean, Theme.Accent, X, Y, sc, false);
                 return;
             }
-            if (overlay != null) Draw(g, overlay, overlay.L, Color.FromArgb(150, Theme.Accent), X, Y, sc, true);
             if (data == null) return;
             Draw(g, data, data.L, Theme.Accent, X, Y, sc, false);
             if (!data.Identical) Draw(g, data, data.R, Color.FromArgb(0x7D, 0xD3, 0xFC), X, Y, sc, false);
@@ -97,13 +82,6 @@ namespace DacEqSwitcher
             var m = new double[r.L.Length];
             for (int i = 0; i < m.Length; i++) m[i] = (r.L[i] + r.R[i]) / 2;
             return m;
-        }
-
-        static int Nearest(double[] f, double hz)
-        {
-            int best = 0;
-            for (int i = 1; i < f.Length; i++) if (Math.Abs(f[i] - hz) < Math.Abs(f[best] - hz)) best = i;
-            return best;
         }
 
         void Draw(Graphics g, EqText.Response r, double[] v, Color c, Func<double, float> X, Func<double, float> Y, float sc, bool dashed)

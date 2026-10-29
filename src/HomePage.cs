@@ -15,18 +15,13 @@ namespace DacEqSwitcher
         readonly Btn btnPause, btnPower;
         // hero
         readonly Label lblPlayingCaption, lblProfile, lblRule;
-        readonly Switch swEq, swLoud;
-        readonly Panel loudStrip;
-        readonly Label lblLoudValue, lblLoudDetail;
-        readonly Btn btnSetRef;
+        readonly Switch swEq;
         readonly ResponseGraph graph;
-        readonly Panel legend;
         readonly Btn btnEditEq;
         // rules
         readonly FlowLayoutPanel ruleList;
         readonly Btn btnNewRule;
         // volume
-        readonly ToolTip tipDetail = new ToolTip();
         readonly Btn btnMute, btnDown, btnUp;
         readonly VolumeSlider slider;
         readonly Label lblVolume;
@@ -84,8 +79,7 @@ namespace DacEqSwitcher
 
             // ------------------------------------------------------------ hero
             var hero = new Card { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 12), Padding = new Padding(22, 18, 22, 14) };
-            var heroGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
-            heroGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            var heroGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
             heroGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             heroGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             heroGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -102,66 +96,33 @@ namespace DacEqSwitcher
             names.Controls.Add(lblProfile);
             names.Controls.Add(lblRule);
             top.Controls.Add(names, 0, 0);
-            var switches = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, AutoSize = true, Margin = new Padding(0, 6, 0, 0) };
+            var switches = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, Margin = new Padding(0, 6, 0, 0) };
             swEq = new Switch { AccessibleName = "EQ" };
-            swLoud = new Switch { AccessibleName = "Loudness compensation" };
             swEq.Click += (s, e) => { Core.SetEqOn(swEq.Checked); RefreshState(); };
-            swLoud.Click += (s, e) => { Core.SetLoudnessOn(swLoud.Checked); RefreshState(); };
             AddSwitch(switches, "EQ", swEq, 0);
-            AddSwitch(switches, "Loudness", swLoud, 1);
             top.Controls.Add(switches, 1, 0);
             heroGrid.Controls.Add(top, 0, 0);
 
-            loudStrip = new Card { Fill = Theme.Inset, Radius = 10, Dock = DockStyle.Fill, Height = 50, Padding = new Padding(14, 8, 8, 8), Margin = new Padding(0, 10, 0, 6) };
-            var loudRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, Margin = new Padding(0) };
-            loudRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            loudRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            loudRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            loudRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            loudRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            var lblLoud = Ui.Text("Loudness", Theme.Body, Theme.Muted);
-            lblLoudValue = Ui.Text("", Theme.F(10f, FontStyle.Bold));
-            lblLoudDetail = Ui.Text("", Theme.Body, Theme.Muted);
-            foreach (var l in new[] { lblLoud, lblLoudValue, lblLoudDetail }) { l.Anchor = AnchorStyles.Left; l.Margin = new Padding(0, 0, 12, 0); }
-            btnSetRef = new Btn("Set current volume as reference", Btn.Kinds.Normal) { Anchor = AnchorStyles.Right, Height = 32, Font = Theme.Small };
-            btnSetRef.Width = btnSetRef.GetPreferredSize(Size.Empty).Width + 16;
-            btnSetRef.MinimumSize = new Size(btnSetRef.Width, 0);
-            btnSetRef.Click += (s, e) => { if (!Core.SetLoudnessReference()) Shell.Error("Connect your DAC first."); RefreshState(); };
-            loudRow.Controls.Add(lblLoud, 0, 0);
-            loudRow.Controls.Add(lblLoudValue, 1, 0);
-            // the detail text takes whatever room is left (shortened with "…"), so the button never clips
-            lblLoudDetail.AutoSize = false;
-            lblLoudDetail.AutoEllipsis = true;
-            lblLoudDetail.Dock = DockStyle.Fill;
-            lblLoudDetail.TextAlign = ContentAlignment.MiddleLeft;
-            loudRow.Controls.Add(lblLoudDetail, 3, 0);
-            loudRow.Controls.Add(btnSetRef, 4, 0);
-            loudStrip.Controls.Add(loudRow);
-            heroGrid.Controls.Add(loudStrip, 0, 1);
-
             graph = new ResponseGraph { Simple = true, Dock = DockStyle.Fill, Margin = new Padding(0, 6, 0, 4), MinimumSize = new Size(0, 90) };
-            heroGrid.Controls.Add(graph, 0, 2);
+            heroGrid.Controls.Add(graph, 0, 1);
 
-            var axis = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, AutoSize = true, Margin = new Padding(0) };
+            var axis = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, AutoSize = true, Margin = new Padding(0) };
             axis.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             axis.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            axis.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             axis.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             axis.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var a20 = Ui.Text("20 Hz", Theme.Small, Theme.Muted);
             var a1k = Ui.Text("1 kHz", Theme.Small, Theme.Muted);
             a1k.Anchor = AnchorStyles.None;
             var a20k = Ui.Text("20 kHz", Theme.Small, Theme.Muted);
-            legend = new Legend { Size = new Size(210, 18), Margin = new Padding(18, 0, 0, 0) };
             btnEditEq = new Btn("Edit EQ", Btn.Kinds.Link) { Height = 22, Margin = new Padding(18, 0, 0, 0) };
             btnEditEq.Width = btnEditEq.GetPreferredSize(Size.Empty).Width;
             btnEditEq.Click += (s, e) => Shell.EditProfile(Core.ActiveProfile);
             axis.Controls.Add(a20, 0, 0);
             axis.Controls.Add(a1k, 1, 0);
             axis.Controls.Add(a20k, 2, 0);
-            axis.Controls.Add(legend, 3, 0);
-            axis.Controls.Add(btnEditEq, 4, 0);
-            heroGrid.Controls.Add(axis, 0, 3);
+            axis.Controls.Add(btnEditEq, 3, 0);
+            heroGrid.Controls.Add(axis, 0, 2);
             hero.Controls.Add(heroGrid);
             grid.Controls.Add(hero, 0, 1);
             grid.SetColumnSpan(hero, 2);
@@ -307,7 +268,6 @@ namespace DacEqSwitcher
 
             // hero
             swEq.Checked = Core.EqOn;
-            swLoud.Checked = Core.LoudnessOn;
             if (!Core.EqOn)
             {
                 lblProfile.Text = "Off";
@@ -321,7 +281,6 @@ namespace DacEqSwitcher
                 lblRule.Text = !connected ? (Core.ActiveProfile == null ? m.Status : "Kept while the DAC is away")
                              : Core.ActiveRule != null ? "Rule: " + Core.RuleText(Core.ActiveRule) : "No rule matches";
             }
-            RefreshLoudness(connected);
             RefreshGraph();
             btnEditEq.Visible = !string.IsNullOrEmpty(Core.ActiveProfile);
             RefreshRules();
@@ -332,50 +291,15 @@ namespace DacEqSwitcher
             RefreshFooter(vals);
         }
 
-        void RefreshLoudness(bool connected)
-        {
-            var l = Core.LoudnessNow;
-            loudStrip.Visible = Core.LoudnessOn && Core.EqOn;
-            if (l == null || !loudStrip.Visible) return;
-            btnSetRef.Enabled = connected;
-            string tip;
-            if (!l.HasReference)
-            {
-                lblLoudValue.Text = "No reference volume";
-                lblLoudDetail.Text = "";
-                tip = "Play music at your normal listening volume, then set it as the reference.";
-            }
-            else
-            {
-                var p = l.Plan;
-                bool boosting = p != null && p.Boosting;
-                lblLoudValue.Text = boosting ? "+" + p.BassDb.ToString("0.0") + " dB at 50 Hz" : "Nothing added at this volume";
-                lblLoudDetail.Text = boosting ? p.KnobBelow.ToString("0.0") + " dB below reference" : "Reference " + Db(l.RefDb.Value);
-                tip = "Reference volume: " + Db(l.RefDb.Value) + " on the DAC." +
-                      (p != null && p.HeadroomDb > 0
-                          ? "\nLoudness keeps " + p.HeadroomDb.ToString("0.0") + " dB of headroom at every volume so the extra bass can't clip.\n" +
-                            "That's why switching Loudness on makes everything that much quieter; turning the DAC down then\n" +
-                            "lowers the level exactly as much as the knob says."
-                          : "");
-            }
-            tipDetail.SetToolTip(lblLoudDetail, tip);
-            tipDetail.SetToolTip(lblLoudValue, tip);
-        }
-
         void RefreshGraph()
         {
-            var l = Core.LoudnessNow;
             string profile = Core.EqOn ? Core.ActiveProfile : null;
-            var plan = l == null ? null : l.Plan;
-            string key = profile + "|" + (plan != null ? string.Join(",", plan.Curve.Select(x => x.ToString("0.0"))) + plan.PreampDb : "-");
+            string key = profile;
             if (key == graphKey) return;
             graphKey = key;
             string text = "";
             try { if (!string.IsNullOrEmpty(profile)) text = Core.Profiles.Read(profile); } catch { }
             graph.Data = EqText.Analyse(text);
-            string loud = plan != null && plan.Boosting ? Loudness.ApoText(plan, "") : null;
-            graph.Overlay = loud == null ? null : EqText.Analyse(text + "\r\n" + loud);
-            legend.Visible = loud != null;
         }
 
         void RefreshRules()
@@ -650,26 +574,6 @@ namespace DacEqSwitcher
                 e.Graphics.Clear(Parent != null ? Parent.BackColor : Theme.Bg);
                 Theme.Smooth(e.Graphics);
                 using (var b = new SolidBrush(color)) e.Graphics.FillEllipse(b, 1, 1, Width - 3, Height - 3);
-            }
-        }
-
-        sealed class Legend : Panel
-        {
-            public Legend() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true); }
-            protected override void OnPaint(PaintEventArgs e)
-            {
-                var g = e.Graphics;
-                g.Clear(Parent != null ? Parent.BackColor : Theme.Card);
-                Theme.Smooth(g);
-                float s = Theme.Scale, y = Height / 2f;
-                using (var p = new Pen(Theme.Accent, 2 * s)) g.DrawLine(p, 0, y, 14 * s, y);
-                var f = Theme.Small;
-                int x = (int)(20 * s);
-                Theme.DrawText(g, "EQ", f, Theme.Muted, new Rectangle(x, 0, 40, Height), TextFormatFlags.VerticalCenter);
-                x += TextRenderer.MeasureText("EQ", f).Width + (int)(14 * s);
-                using (var p = new Pen(Color.FromArgb(150, Theme.Accent), 2 * s) { DashPattern = new[] { 2f, 1.5f } }) g.DrawLine(p, x, y, x + 14 * s, y);
-                x += (int)(20 * s);
-                Theme.DrawText(g, "With loudness", f, Theme.Muted, new Rectangle(x, 0, Width - x, Height), TextFormatFlags.VerticalCenter);
             }
         }
     }
