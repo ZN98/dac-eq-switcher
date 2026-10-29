@@ -9,8 +9,8 @@ A small Windows tray app for Topping DACs that:
   can change is in the app;
 - adds optional **loudness compensation** (ISO 226:2003 equal-loudness contours) so bass
   and treble stay balanced as you turn the volume down, with a reference volume per rule.
-  The correction is worked out for the level you actually hear, including the cut that
-  keeps it from clipping, and is tested end to end against the standard's inverse formula;
+  Fixed headroom keeps it from clipping while the level follows the DAC volume exactly,
+  and it is tested end to end against the standard's inverse formula;
 - has a one-click **EQ on/off** switch (Home, tray menu, or middle-click the tray icon);
 - lets you import, type or paste EQs (Peace, Equalizer APO, AutoEQ, REW) with a live response graph.
 

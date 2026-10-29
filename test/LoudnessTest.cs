@@ -7,11 +7,12 @@ using DacEqSwitcher;
 // Loudness compensation against ISO 226:2003.
 //  1. The contours match an independent implementation of the published tables and eq. (1).
 //  2. Eq. (1) and the standard's separate inverse, eq. (2), agree; 1 kHz is the phon level.
-//  3. End to end: a sound balanced at the reference (every frequency at 80 phon), turned down
-//     on the DAC and passed through the Equalizer APO lines the app writes, is heard at one
-//     loudness level at every standard frequency - the level the app says - per eq. (2).
-//  4. The combined EQ + compensation never peaks above the EQ alone (no new clipping), and the
-//     extra cut is no bigger than needed.
+//  3. End to end, from the reference to 60 dB below it, through the Equalizer APO lines the app
+//     writes: the preamp (headroom) is the same at every volume, so the level follows the DAC
+//     exactly; a sound balanced at the reference (every frequency at 80 phon) is heard at one
+//     loudness level at every standard frequency, per eq. (2), wherever the standard applies.
+//  4. The combined EQ + compensation never peaks above the EQ alone (no new clipping) at any
+//     volume, and the headroom is no bigger than needed.
 static class LT
 {
     static int fails;
@@ -21,6 +22,24 @@ static class LT
     {
         if (!ok) fails++;
         Console.WriteLine((ok ? "ok    " : "FAIL  ") + what);
+    }
+
+    static void Parse(string apo, out double pre, out Dictionary<double, double> pts)
+    {
+        // read back what Equalizer APO gets (parsed here, not by the app)
+        pre = 0;
+        pts = new Dictionary<double, double>();
+        foreach (var raw in apo.Split('\n'))
+        {
+            var l = raw.Trim();
+            if (l.StartsWith("Preamp:")) pre = double.Parse(l.Substring(7).Replace("dB", "").Trim(), Inv);
+            if (l.StartsWith("GraphicEQ:"))
+                foreach (var part in l.Substring(10).Split(';'))
+                {
+                    var t = part.Trim().Split(' ');
+                    pts[double.Parse(t[0], Inv)] = double.Parse(t[1], Inv);
+                }
+        }
     }
 
     static int Main()
@@ -55,59 +74,63 @@ static class LT
             { "narrow treble peak, per channel", "Preamp: -2 dB\r\nChannel: L\r\nFilter: ON PK Fc 8000 Hz Gain 5 dB Q 6\r\nChannel: R\r\nFilter: ON PK Fc 60 Hz Gain 2 dB Q 1" },
             { "EQ that already clips", "Filter: ON PK Fc 40 Hz Gain 4 dB Q 1" },
         };
-        foreach (var kv in profiles)
-            foreach (var d in new[] { 0.5, 3, 5, 10, 15, 20, 30 })
+        foreach (var cap in new[] { 12.0, 30.0 })   // the default, and one high enough to test the standard unclamped
+            foreach (var kv in profiles)
             {
-                var plan = Loudness.Make(kv.Value, d, 80, 1.0, 0);
-                string tag = kv.Key + ", DAC " + d + " dB down";
-                if (plan == null) { Check(false, tag + ": no plan"); continue; }
-                string apo = Loudness.ApoText(plan, "test");
-
-                // read back what Equalizer APO gets: preamp + GraphicEQ points (parsed here, not by the app)
-                double pre = 0;
-                var pts = new List<KeyValuePair<double, double>>();
-                foreach (var raw in apo.Split('\n'))
-                {
-                    var l = raw.Trim();
-                    if (l.StartsWith("Preamp:")) pre = double.Parse(l.Substring(7).Replace("dB", "").Trim(), Inv);
-                    if (l.StartsWith("GraphicEQ:"))
-                        foreach (var part in l.Substring(10).Split(';'))
-                        {
-                            var t = part.Trim().Split(' ');
-                            pts.Add(new KeyValuePair<double, double>(double.Parse(t[0], Inv), double.Parse(t[1], Inv)));
-                        }
-                }
-                // every standard frequency is a GraphicEQ point, so its gain is exact
-                double lo = double.MaxValue, hi = double.MinValue;
-                for (int i = 0; i < Loudness.Count; i++)
-                {
-                    double gain = pts.First(p => Math.Abs(p.Key - Loudness.Frequency(i)) < 1e-6).Value;
-                    double spl = Loudness.Spl(i, 80) - d + pre + gain;      // the EQ itself was part of the reference sound
-                    double phon = Loudness.Phon(i, spl);
-                    lo = Math.Min(lo, phon); hi = Math.Max(hi, phon);
-                }
-                double heardPhon = 80 - plan.HeardBelow;
-                // within the standard's range every frequency must land on the heard level; below
-                // 20 phon (where it has no data) the 20-phon correction is held
-                bool equal = heardPhon >= Loudness.MinPhon
-                    ? hi - lo < 0.06 && Math.Abs((hi + lo) / 2 - heardPhon) < 0.06
-                    : plan.Curve.Zip(Loudness.Curve(Loudness.MinPhon, 80, 1.0, 0), (a, b) => Math.Abs(a - b)).Max() < 1e-9;
-                bool consistent = Math.Abs(plan.HeardBelow - (d - plan.PreampDb)) < 0.02;
-
-                // 4. peaks: the EQ + compensation vs the EQ alone, finely sampled 5 Hz - 24 kHz
-                var eq = EqText.Analyse(kv.Value, 8000, 5, 24000);
-                var both = EqText.Analyse(kv.Value + "\r\nChannel: all\r\n" + apo, 8000, 5, 24000);
+                string tag = kv.Key + ", largest boost " + cap + " dB";
+                double head = Loudness.Headroom(kv.Value, 80, 1.0, cap);
+                var eq = EqText.Analyse(kv.Value, 3000, 5, 24000);
                 double allowed = Math.Max(0, eq.PeakDb);
-                bool noClip = both.PeakDb <= allowed + 0.01;
-                bool notOvercut = plan.PreampDb == 0 || both.PeakDb >= allowed - 0.05;
-                Check(equal && consistent && noClip && notOvercut,
-                      tag + ": heard " + plan.HeardBelow.ToString("0.0", Inv) + " dB down" + (heardPhon < Loudness.MinPhon ? " (below 20 phon: 20-phon correction held)" : "") + ", every frequency at " + lo.ToString("0.00", Inv) + "-" + hi.ToString("0.00", Inv)
-                      + " phon (want " + heardPhon.ToString("0.00", Inv) + "), +" + plan.BassDb.ToString("0.0", Inv) + " dB at 50 Hz, preamp " + plan.PreampDb.ToString("0.00", Inv)
-                      + ", peak " + both.PeakDb.ToString("0.00", Inv) + " (EQ alone " + eq.PeakDb.ToString("0.00", Inv) + ")");
+                double? refPre = null, ref1k = null;
+                bool constantPre = true, followsKnob = true, equal = true, noClip = true;
+                double worstPhon = 0, worstLevel = 0, highestPeak = double.MinValue;
+                int exact = 0;
+                foreach (var d in new[] { -5.0 }.Concat(Enumerable.Range(0, 121).Select(x => x * 0.5)))
+                {
+                    var plan = Loudness.Make(head, d, 80, 1.0, cap);
+                    string apo = Loudness.ApoText(plan, "test") ?? "";
+                    double pre; Dictionary<double, double> pts;
+                    Parse(apo, out pre, out pts);
+                    // the preamp is the same at every volume, including at and above the reference
+                    if (refPre == null) refPre = pre;
+                    if (Math.Abs(pre - refPre.Value) > 1e-9 || Math.Abs(pre + head) > 1e-9) constantPre = false;
+                    // the level (1 kHz, where the correction is 0 by definition) follows the DAC exactly
+                    double g1k = pts.Count == 0 ? 0 : pts[1000];
+                    double level = pre + g1k - Math.Max(0, d);
+                    if (ref1k == null) ref1k = level;
+                    worstLevel = Math.Max(worstLevel, Math.Abs((ref1k.Value - level) - Math.Max(0, d)));
+                    // every frequency heard at the same level (sound balanced at 80 phon at the reference,
+                    // where the same preamp was already applied), wherever the standard applies and no boost is limited
+                    if (d > 0 && 80 - d >= Loudness.MinPhon && plan.Curve.Max() < cap - 1e-9)
+                    {
+                        exact++;
+                        for (int k = 0; k < Loudness.Count; k++)
+                        {
+                            double phon = Loudness.Phon(k, Loudness.Spl(k, 80) - d + pts[Loudness.Frequency(k)]);
+                            // the target through the same two equations, so their 0.06 phon mismatch cancels
+                            double want = Loudness.Phon(k, Loudness.Spl(k, 80 - d));
+                            worstPhon = Math.Max(worstPhon, Math.Abs(phon - want));
+                        }
+                    }
+                    // the EQ + correction never peaks above the EQ alone
+                    if (d >= 0 && Math.Abs(d % 2) < 1e-9)
+                    {
+                        double peak = EqText.Analyse(kv.Value + "\r\nChannel: all\r\n" + apo, 3000, 5, 24000).PeakDb;
+                        if (peak > allowed + 0.01) noClip = false;
+                        highestPeak = Math.Max(highestPeak, peak);
+                    }
+                }
+                followsKnob = worstLevel < 0.006;
+                equal = worstPhon < 0.02;   // the written gains are rounded to 0.01 dB
+                bool notOvercut = head == 0 || highestPeak >= allowed - 0.05;
+                Check(constantPre && followsKnob && equal && noClip && notOvercut && exact > 0,
+                      tag + ": headroom " + head.ToString("0.00", Inv) + " dB at every volume; level follows the DAC to " + worstLevel.ToString("0.000", Inv)
+                      + " dB; " + exact + " levels exact to " + worstPhon.ToString("0.000", Inv) + " phon; peak at most " + highestPeak.ToString("0.00", Inv)
+                      + " dB (EQ alone " + eq.PeakDb.ToString("0.00", Inv) + ")");
             }
 
         // edges, settings, and when there is nothing to do
-        var g = Loudness.Make("", 15, 80, 1.0, 0);
+        var g = Loudness.Make("", 15, 80, 1.0, 12);
         var nodes = Loudness.Nodes(g.Curve);
         Check(nodes.First().Key == Loudness.LowEdgeHz && nodes.First().Value == g.Curve[0] &&
               nodes.Last().Key == Loudness.HighEdgeHz && nodes.Last().Value == g.Curve[Loudness.Count - 1],
@@ -115,8 +138,10 @@ static class LT
         var full = Loudness.Curve(60, 80, 1.0, 0);
         var part60 = Loudness.Curve(60, 80, 0.6, 0);
         Check(full.Zip(part60, (a, b) => Math.Abs(b - 0.6 * a)).Max() < 1e-9, "strength scales the correction");
-        Check(Loudness.Curve(40, 80, 1.0, 12).Max() <= 12 + 1e-9 && Loudness.Curve(40, 80, 1.0, 0).Max() > 12, "boost limit only applies when set");
-        Check(Loudness.Make("", 0, 80, 1.0, 0) == null && Loudness.Make("", -5, 80, 1.0, 0) == null, "nothing added at or above the reference volume");
+        Check(Loudness.Curve(40, 80, 1.0, 12).Max() <= 12 + 1e-9, "boosts stay within the largest boost");
+        var atRef = Loudness.Make("", 0, 80, 1.0, 12);
+        Check(!atRef.Boosting && !Loudness.Make("", -5, 80, 1.0, 12).Boosting && Loudness.ApoText(atRef, "x").Contains("Preamp") && !Loudness.ApoText(atRef, "x").Contains("GraphicEQ"),
+              "at or above the reference: only the headroom, no correction");
         Check(Math.Abs(Loudness.Curve(80, 80, 1.0, 0).Max()) < 1e-9 && Math.Abs(Loudness.Curve(80, 80, 1.0, 0).Min()) < 1e-9, "the curve is flat at the reference level");
 
         Console.WriteLine(fails == 0 ? "loudness: all checks passed" : "loudness: " + fails + " FAILED");

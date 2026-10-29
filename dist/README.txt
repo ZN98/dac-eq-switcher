@@ -39,15 +39,16 @@ LOUDNESS COMPENSATION
     - At or above the reference nothing is added. Below it, the correction follows the
       DAC volume in 0.5 dB steps, updated a moment after the volume stops moving.
     - The DAC's volume comes after Equalizer APO, so the extra bass can only be made by
-      lowering everything else (otherwise it would clip). The app does this as little as
-      your EQ allows, and works out the correction for the level you actually hear,
-      shown on Home as "Heard N dB below reference". Because of that cut, turning the
-      DAC down lowers the mids and treble faster than the knob suggests (about twice as
-      fast with the full correction); no frequency is ever louder than at the reference.
-    - Settings > Loudness: strength and largest boost (the standard is 100 % with no
-      limit), and the loudness your reference volume corresponds to (70-80 phon, the
-      range the standard covers at every frequency). The standard has no data below
-      20 phon or outside 20 Hz - 12.5 kHz; there the nearest correction is held.
+      lowering everything else (otherwise it would clip). The app keeps that headroom
+      the same at every volume, so turning the DAC down lowers the level exactly as much
+      as the knob says. Switching Loudness on therefore makes everything quieter by that
+      amount (up to the largest boost, less if your EQ already has headroom): turn the
+      DAC up once to match, then set the reference.
+    - Settings > Loudness: strength (100 % is the standard), largest boost (6-15 dB,
+      12 by default; also the headroom kept), and the loudness your reference volume
+      corresponds to (70-80 phon, the range the standard covers at every frequency).
+      The standard has no data below 20 phon or outside 20 Hz - 12.5 kHz; there the
+      nearest correction is held.
 
 DAC CONTROLS
   Everything toppingctl can change for your model is in the app:

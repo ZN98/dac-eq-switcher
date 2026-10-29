@@ -345,20 +345,18 @@ namespace DacEqSwitcher
                 lblLoudDetail.Text = "";
                 tip = "Play music at your normal listening volume, then set it as the reference.";
             }
-            else if (l.Plan == null)
-            {
-                lblLoudValue.Text = "Off at this volume";
-                lblLoudDetail.Text = "Reference " + Db(l.RefDb.Value);
-                tip = "Nothing is added at or above the reference volume (" + Db(l.RefDb.Value) + " on the DAC).";
-            }
             else
             {
                 var p = l.Plan;
-                lblLoudValue.Text = "+" + p.BassDb.ToString("0.0") + " dB at 50 Hz";
-                lblLoudDetail.Text = "Heard " + p.HeardBelow.ToString("0.0") + " dB below reference";
-                tip = "The DAC is " + p.KnobBelow.ToString("0.0") + " dB below the reference volume (" + Db(l.RefDb.Value) + ")." +
-                      (p.PreampDb < 0 ? "\nThe extra bass is made by lowering everything else by " + (-p.PreampDb).ToString("0.0") +
-                                         " dB, so it can't clip:\nyou hear " + p.HeardBelow.ToString("0.0") + " dB below the reference, and the correction is for that level." : "");
+                bool boosting = p != null && p.Boosting;
+                lblLoudValue.Text = boosting ? "+" + p.BassDb.ToString("0.0") + " dB at 50 Hz" : "Nothing added at this volume";
+                lblLoudDetail.Text = boosting ? p.KnobBelow.ToString("0.0") + " dB below reference" : "Reference " + Db(l.RefDb.Value);
+                tip = "Reference volume: " + Db(l.RefDb.Value) + " on the DAC." +
+                      (p != null && p.HeadroomDb > 0
+                          ? "\nLoudness keeps " + p.HeadroomDb.ToString("0.0") + " dB of headroom at every volume so the extra bass can't clip.\n" +
+                            "That's why switching Loudness on makes everything that much quieter; turning the DAC down then\n" +
+                            "lowers the level exactly as much as the knob says."
+                          : "");
             }
             tipDetail.SetToolTip(lblLoudDetail, tip);
             tipDetail.SetToolTip(lblLoudValue, tip);
@@ -375,7 +373,7 @@ namespace DacEqSwitcher
             string text = "";
             try { if (!string.IsNullOrEmpty(profile)) text = Core.Profiles.Read(profile); } catch { }
             graph.Data = EqText.Analyse(text);
-            string loud = Loudness.ApoText(plan, "");
+            string loud = plan != null && plan.Boosting ? Loudness.ApoText(plan, "") : null;
             graph.Overlay = loud == null ? null : EqText.Analyse(text + "\r\n" + loud);
             legend.Visible = loud != null;
         }

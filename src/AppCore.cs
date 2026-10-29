@@ -40,9 +40,9 @@ namespace DacEqSwitcher
         [DataMember] public bool LoudnessOff;         // default (false) = on, once a reference volume is set
         [DataMember] public double? DefaultLoudnessRefDb;   // reference when no rule matches
         [DataMember] public int LoudnessStrength = 100;     // % of the ISO 226 correction (100 = the standard)
-        [DataMember] public int LoudnessMaxBoost;           // dB, 0 = no limit (the standard has none)
+        [DataMember] public int LoudnessMaxBoost = 12;      // dB; also the headroom kept at every volume
         [DataMember] public int LoudnessRefPhon = 80;       // level music is balanced for
-        [DataMember] public int LoudnessVersion;            // 2: defaults follow the standard
+        [DataMember] public int LoudnessVersion;            // 2: 100 % strength; 3: fixed headroom
         [DataMember] public bool MuteOptical;               // DX1 II mute also mutes the optical output
 
         void Fix()
@@ -53,11 +53,12 @@ namespace DacEqSwitcher
             if (LastSeen == null) LastSeen = new Dictionary<string, int>();
             if (LoudnessVersion < 2)
             {
-                // 2.2.12 defaulted to 60 % with a 12 dB limit; start everyone on the standard
-                LoudnessStrength = 100; LoudnessMaxBoost = 0; LoudnessRefPhon = 80; LoudnessVersion = 2;
+                // 2.2.12 defaulted to 60 %; start everyone on the standard
+                LoudnessStrength = 100; LoudnessRefPhon = 80; LoudnessVersion = 2;
             }
+            if (LoudnessVersion < 3) { LoudnessMaxBoost = 12; LoudnessVersion = 3; }   // headroom is now reserved for it
             if (LoudnessStrength <= 0 || LoudnessStrength > 100) LoudnessStrength = 100;
-            if (LoudnessMaxBoost < 0 || LoudnessMaxBoost > 30) LoudnessMaxBoost = 0;
+            if (LoudnessMaxBoost < 3 || LoudnessMaxBoost > 30) LoudnessMaxBoost = 12;
             if (LoudnessRefPhon < 60 || LoudnessRefPhon > (int)Loudness.MaxRefPhon) LoudnessRefPhon = 80;
         }
 
@@ -319,8 +320,9 @@ namespace DacEqSwitcher
             public Loudness.Plan Plan;   // what's applied; null when nothing is added
         }
 
-        double appliedBelow = -1;        // DAC volume below the reference that the file is for; -1 = unknown
-        string planKey;
+        double appliedBelow = -2;        // DAC volume below the reference the file is for; -1 = loudness inactive, -2 = unknown
+        string planKey, headroomKey;
+        double headroom;
         Loudness.Plan plan;
         System.Threading.Timer loudTimer;
         public LoudnessState LoudnessNow { get; private set; }
@@ -356,11 +358,17 @@ namespace DacEqSwitcher
 
         Loudness.Plan PlanFor(double below, string profile, string body)
         {
-            if (below <= 0) return null;
-            string k = below + "|" + profile + "|" + body + "|" + Settings.LoudnessStrength + "/" + Settings.LoudnessMaxBoost + "/" + Settings.LoudnessRefPhon;
+            if (below < 0) return null;
+            string hk = profile + "|" + body + "|" + Settings.LoudnessStrength + "/" + Settings.LoudnessMaxBoost + "/" + Settings.LoudnessRefPhon;
+            if (hk != headroomKey)
+            {
+                headroom = Loudness.Headroom(body, Settings.LoudnessRefPhon, Settings.LoudnessStrength / 100.0, Settings.LoudnessMaxBoost);
+                headroomKey = hk;
+            }
+            string k = below + "|" + hk;
             if (k != planKey)
             {
-                plan = Loudness.Make(body, below, Settings.LoudnessRefPhon, Settings.LoudnessStrength / 100.0, Settings.LoudnessMaxBoost);
+                plan = Loudness.Make(headroom, below, Settings.LoudnessRefPhon, Settings.LoudnessStrength / 100.0, Settings.LoudnessMaxBoost);
                 planKey = k;
             }
             return plan;
@@ -391,14 +399,14 @@ namespace DacEqSwitcher
 
                 // Loudness: follows the DAC volume in 0.5 dB steps below the reference; held while the DAC is away
                 double? reference = ReferenceFor(ActiveRule);
-                double below = appliedBelow < 0 ? 0 : appliedBelow;
+                double below = appliedBelow;
                 if (Monitor.Connected)
-                    below = LoudnessOn && reference.HasValue && volume.HasValue ? Math.Max(0, Math.Round((reference.Value - volume.Value) * 2) / 2) : 0;
+                    below = LoudnessOn && reference.HasValue && volume.HasValue ? Math.Max(0, Math.Round((reference.Value - volume.Value) * 2) / 2) : -1;
                 string baseKey = EqOn ? "on:" + ActiveProfile : "off";
                 bool profileChanged = writtenKey == null || !writtenKey.StartsWith(baseKey + "|");
                 if (below != appliedBelow)
                 {
-                    if (settle || force || profileChanged || appliedBelow < 0) appliedBelow = below;
+                    if (settle || force || profileChanged || appliedBelow < 0 || below < 0) appliedBelow = below;
                     else
                     {
                         // the knob is moving: wait until it settles so Equalizer APO isn't reloaded constantly
@@ -432,8 +440,8 @@ namespace DacEqSwitcher
                     else text = "# DAC EQ Switcher: active EQ \"" + ActiveProfile + "\" (edit it in the app, not here)\r\n"
                               + body.TrimEnd() + "\r\nChannel: all\r\n";
                     var inv = System.Globalization.CultureInfo.InvariantCulture;
-                    string loud = Loudness.ApoText(p, "Loudness compensation (ISO 226): DAC " + p?.KnobBelow.ToString("0.0", inv)
-                                                      + " dB below reference, heard " + p?.HeardBelow.ToString("0.0", inv) + " dB below");
+                    string loud = p == null ? null : Loudness.ApoText(p, "Loudness compensation (ISO 226): " + p.KnobBelow.ToString("0.0", inv)
+                                                      + " dB below reference, " + p.HeadroomDb.ToString("0.00", inv) + " dB headroom kept at every volume");
                     if (loud != null) text += "\r\n" + loud;
                 }
                 string err = null;

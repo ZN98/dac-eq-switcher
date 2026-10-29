@@ -15,9 +15,9 @@ namespace DacEqSwitcher
     /// so that every frequency is again heard at the same loudness level (L phon).
     ///
     /// The DAC's volume comes after Equalizer APO, so the boost can only be made digitally by
-    /// cutting everything else (a preamp); that cut lowers the level actually heard. The plan
-    /// below therefore solves for the heard level: heard = knob drop + preamp(heard), with the
-    /// preamp sized on the active EQ and the compensation together.
+    /// cutting everything else (a preamp). That cut is fixed - the same at every volume, sized for
+    /// the largest boost on top of the active EQ - so turning the DAC down lowers the level
+    /// exactly as much as the knob says, and the reference level already includes it.
     ///
     /// ISO 226:2023's tables are only in the paid standard; the 2003 edition is the one open
     /// implementations use. It defines 20 Hz - 12.5 kHz, 20-90 phon (5-12.5 kHz: up to 80 phon).
@@ -97,57 +97,74 @@ namespace DacEqSwitcher
 
         public sealed class Plan
         {
-            public double KnobBelow;     // DAC volume below the reference volume (dB)
-            public double HeardBelow;    // level actually heard below the reference (dB): knob + preamp
-            public double PreampDb;      // <= 0; the extra cut so EQ + compensation can't clip
-            public double[] Curve;       // gain at each ISO frequency
+            public double KnobBelow;     // DAC volume below the reference volume (dB; 0 at or above it)
+            public double HeadroomDb;    // fixed cut kept at every volume so the largest boost can't clip
+            public double PreampDb { get { return -HeadroomDb; } }
+            public double[] Curve;       // gain at each ISO frequency (all 0 at or above the reference)
+            public bool Boosting { get { return Curve.Any(x => Math.Abs(x) >= 0.005); } }
             public double BassDb { get { return Curve[4]; } }   // at 50 Hz, for the UI
         }
 
         const int GridPoints = 1600;     // ~0.4 % spacing, 5 Hz - 24 kHz: finds the peaks of narrow EQ filters too
 
-        /// Works out the compensation for the DAC being `knobBelow` dB under the reference volume,
-        /// on top of the EQ `profileText` (Equalizer APO commands; "" for none). Null: nothing to add.
+        /// The largest gain the correction can reach at each ISO frequency, over every level from the
+        /// reference down to the bottom of the standard (each frequency's gain moves one way with level).
+        public static double[] Envelope(double refPhon, double strength, double maxBoost)
+        {
+            var env = new double[F.Length];
+            for (double l = refPhon; l >= MinPhon - 1e-9; l -= 0.25)
+            {
+                var g = Curve(l, refPhon, strength, maxBoost);
+                for (int i = 0; i < env.Length; i++) env[i] = Math.Max(env[i], g[i]);
+            }
+            return env;
+        }
+
+        /// Headroom (dB) to keep at every volume so `profileText` plus any correction up to the envelope
+        /// never peaks above the EQ alone (or 0 dBFS when the EQ has spare headroom, which is used first).
+        public static double Headroom(string profileText, double refPhon, double strength, double maxBoost)
+        {
+            var eq = EqText.Analyse(profileText ?? "", GridPoints, LowEdgeHz, 24000);
+            var nodes = Nodes(Envelope(refPhon, strength, maxBoost));
+            double eqPeak = double.MinValue, peak = double.MinValue;
+            for (int i = 0; i < GridPoints; i++)
+            {
+                double b = Math.Max(eq.L[i], eq.R[i]);
+                eqPeak = Math.Max(eqPeak, b);
+                peak = Math.Max(peak, b + Interpolate(nodes, eq.Freqs[i]));
+            }
+            double cut = Math.Max(0, peak + 0.005 - Math.Max(0, eqPeak));   // + the 0.01 dB rounding of the written gains
+            return Math.Ceiling(cut * 100) / 100;
+        }
+
+        /// The correction for the DAC being `knobBelow` dB under the reference volume. The headroom is
+        /// the same at every volume, so the level follows the DAC exactly; maxBoost (> 0) bounds it.
+        public static Plan Make(double headroom, double knobBelow, double refPhon, double strength, double maxBoost)
+        {
+            refPhon = Math.Max(MinPhon, Math.Min(MaxRefPhon, refPhon));
+            knobBelow = Math.Max(0, knobBelow);
+            return new Plan { KnobBelow = knobBelow, HeadroomDb = headroom, Curve = Curve(refPhon - knobBelow, refPhon, strength, maxBoost) };
+        }
+
         public static Plan Make(string profileText, double knobBelow, double refPhon, double strength, double maxBoost)
         {
-            if (knobBelow <= 0) return null;
-            refPhon = Math.Max(MinPhon, Math.Min(MaxRefPhon, refPhon));
-            var eq = EqText.Analyse(profileText ?? "", GridPoints, LowEdgeHz, 24000);
-            var basePeak = new double[GridPoints];
-            double eqPeak = double.MinValue;
-            for (int i = 0; i < GridPoints; i++) { basePeak[i] = Math.Max(eq.L[i], eq.R[i]); eqPeak = Math.Max(eqPeak, basePeak[i]); }
-            double allowed = Math.Max(0, eqPeak);   // never louder than the EQ alone peaks (0 dBFS when it has headroom)
-
-            double heard = knobBelow, cut = 0;
-            double[] g = null;
-            for (int k = 0; k < 200; k++)
-            {
-                g = Curve(refPhon - heard, refPhon, strength, maxBoost);
-                var nodes = Nodes(g);
-                double peak = double.MinValue;
-                for (int i = 0; i < GridPoints; i++) peak = Math.Max(peak, basePeak[i] + Interpolate(nodes, eq.Freqs[i]));
-                cut = Math.Max(0, peak + 0.005 - allowed);   // + the 0.01 dB rounding of the written gains
-                double next = knobBelow + cut;
-                // the cut grows by at most ~0.55 dB per dB of level, so this converges geometrically
-                if (Math.Abs(next - heard) < 1e-4) { heard = next; break; }
-                heard = next;
-            }
-            g = Curve(refPhon - heard, refPhon, strength, maxBoost);
-            if (g.All(x => Math.Abs(x) < 0.005)) return null;
-            return new Plan { KnobBelow = knobBelow, HeardBelow = heard, PreampDb = -Math.Ceiling(cut * 100) / 100, Curve = g };
+            return Make(Headroom(profileText, refPhon, strength, maxBoost), knobBelow, refPhon, strength, maxBoost);
         }
 
         /// Equalizer APO lines for a plan: the preamp, then the GraphicEQ.
         public static string ApoText(Plan p, string comment)
         {
-            if (p == null) return null;
+            if (p == null || (!p.Boosting && p.HeadroomDb <= 0)) return null;
             var inv = CultureInfo.InvariantCulture;
             var sb = new StringBuilder();
             sb.Append("# ").Append(comment).Append("\r\nChannel: all\r\n");
             if (p.PreampDb < 0) sb.Append("Preamp: ").Append(p.PreampDb.ToString("0.00", inv)).Append(" dB\r\n");
-            sb.Append("GraphicEQ: ");
-            sb.Append(string.Join("; ", Nodes(p.Curve).Select(n => n.Key.ToString("0.#", inv) + " " + n.Value.ToString("0.00", inv))));
-            sb.Append("\r\n");
+            if (p.Boosting)
+            {
+                sb.Append("GraphicEQ: ");
+                sb.Append(string.Join("; ", Nodes(p.Curve).Select(n => n.Key.ToString("0.#", inv) + " " + n.Value.ToString("0.00", inv))));
+                sb.Append("\r\n");
+            }
             return sb.ToString();
         }
     }
