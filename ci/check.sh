@@ -27,4 +27,13 @@ mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/ToggleTest.
 T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data"; touch "$T/eapo/config.txt"
 DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
     timeout 120 mono build/DacEqTest.exe || { echo "EQ on/off test failed"; fail=1; }
+# Equalizer APO engine against an independent numpy port of Equalizer APO's filters, plus control flow
+mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/EngineTest.cs
+T="$(mktemp -d)"
+python3 test/apo_ref.py "$T" > "$T/ref.txt" && timeout 300 mono build/DacEqTest.exe "$T" < "$T/ref.txt" || { echo "engine test failed"; fail=1; }
+# EQs with files (convolution impulse responses, includes) through the app
+mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/FilesTest.cs
+T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data" "$T/src"; touch "$T/eapo/config.txt"
+DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
+    timeout 120 mono build/DacEqTest.exe "$T/src" || { echo "files test failed"; fail=1; }
 exit $fail

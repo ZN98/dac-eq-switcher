@@ -120,6 +120,55 @@ namespace DacEqSwitcher
             }
         }
 
+        public const string ProfilesFolder = "DAC EQ Switcher";
+
+        /// Copies an EQ and its files to "config\DAC EQ Switcher\<name>\" (only what changed, so
+        /// Equalizer APO doesn't reload needlessly). Returns the Include path relative to config.
+        public bool SyncProfile(string name, string body, string filesDir, out string include, out string error)
+        {
+            include = ProfilesFolder + "\\" + name + "\\" + ProfileStore.SyncedName;
+            error = null;
+            try
+            {
+                string target = Path.Combine(ConfigDir, ProfilesFolder, name);
+                Directory.CreateDirectory(target);
+                var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ProfileStore.SyncedName };
+                foreach (var src in Directory.GetFiles(filesDir, "*", SearchOption.AllDirectories))
+                {
+                    string rel = src.Substring(filesDir.Length + 1);
+                    wanted.Add(rel);
+                    string dst = Path.Combine(target, rel);
+                    var si = new FileInfo(src); var di = new FileInfo(dst);
+                    if (di.Exists && di.Length == si.Length && di.LastWriteTimeUtc == si.LastWriteTimeUtc) continue;
+                    Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                    File.Copy(src, dst, true);
+                    File.SetLastWriteTimeUtc(dst, si.LastWriteTimeUtc);
+                }
+                foreach (var old in Directory.GetFiles(target, "*", SearchOption.AllDirectories))
+                    if (!wanted.Contains(old.Substring(target.Length + 1))) File.Delete(old);
+                string eq = Path.Combine(target, ProfileStore.SyncedName);
+                var bytes = Utf8.GetBytes(body);
+                if (!File.Exists(eq) || !File.ReadAllBytes(eq).SequenceEqual(bytes)) File.WriteAllBytes(eq, bytes);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                error = "Couldn't copy the EQ's files to Equalizer APO's config folder: " + ex.Message;
+                return false;
+            }
+        }
+
+        /// Removes a renamed or deleted EQ's copy from the config folder.
+        public void RemoveSynced(string name)
+        {
+            try
+            {
+                string target = Path.Combine(ConfigDir, ProfilesFolder, name);
+                if (Directory.Exists(target)) Directory.Delete(target, true);
+            }
+            catch { }
+        }
+
         /// Comments out other active lines in config.txt (backup kept). Returns the backup name.
         public string DisableOtherLines()
         {

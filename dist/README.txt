@@ -19,9 +19,9 @@ GETTING STARTED
      Windows may show "Windows protected your PC" because the file isn't signed:
      click "More info", then "Run anyway".
   2. Home: click "Set up" at the bottom (asks for administrator permission once).
-  3. EQ profiles (second icon on the left): Import your EQs (Peace .peace, Equalizer APO / AutoEQ / REW .txt),
-     or click New and type or paste Equalizer APO filters. The graph shows the result
-     and warns if it could clip.
+  3. EQ profiles (second icon on the left): Import your EQs (Peace .peace, Equalizer APO / AutoEQ / REW .txt,
+     or an impulse response .wav/.flac for convolution), or click New and type or paste
+     Equalizer APO commands. The graph shows the result and warns if it could clip.
   4. Home > EQ > New rule: add rules such as "Output is Headphones -> use EM6L".
      Rules are checked top to bottom (reorder them on the Rules page); the first
      match wins.
@@ -43,6 +43,27 @@ DAC CONTROLS
   knob), saving scenes, factory reset or firmware updates.
   toppingctl marks DX1 II control as tested on one unit, so the app asks once before
   sending anything to a DX1 II.
+
+EQUALIZER APO COMMANDS
+  An EQ can use anything Equalizer APO understands: Preamp, Filter (PK/PEQ/Modal, LP/HP,
+  LPQ/HPQ, BP, NO, AP, LS/HS, LSC/HSC with Q, BW Oct or slope, LS/HS 6dB/12dB, IIR with
+  your own coefficients), GraphicEQ, Convolution, Delay, Copy, Channel, Stage, Include,
+  Device, If/ElseIf/Else/EndIf, Eval and `inline expressions`, VSTPlugin and
+  LoudnessCorrection. The app passes your text to Equalizer APO unchanged.
+    - The graph and clipping check follow Equalizer APO's own maths (ported from its
+      source): every filter type, GraphicEQ's minimum-phase FIR, convolution impulse
+      responses (WAV and FLAC), Delay/Copy (crossfeed), channels, expressions and Ifs.
+      VST plug-ins and loudness correction run but can't be drawn; the note under the
+      graph says so, and lists anything Equalizer APO would skip.
+    - Filters depend on the sample rate. The graph uses the rate Windows runs your DAC
+      at (Sound settings > your DAC > Format); pick another rate under the graph to check.
+    - Convolution impulse responses must match the DAC's sample rate, or Equalizer APO
+      skips them. Use "If: sampleRate == 44100" ... "EndIf:" to pick one per rate.
+    - Files an EQ uses (impulse responses, included files) are kept with it: importing
+      brings them along, and the Files button adds or removes them. The EQ and its files
+      are copied into Equalizer APO's config folder when it's in use.
+    - Equalizer APO's command names are case-sensitive ("preamp:" is ignored); importing
+      corrects them, and the editor flags lines Equalizer APO won't read.
 
 GOOD TO KNOW
   - EQ on/off: the EQ switch on Home, "EQ on" in the tray menu, or
@@ -69,13 +90,19 @@ UPDATES
 
 WHERE THINGS ARE
   Your EQs and settings:   %APPDATA%\DacEqSwitcher
-  In Equalizer APO:        config\daceqswitcher_active.txt, plus one Include line in config.txt
+  In Equalizer APO:        config\daceqswitcher_active.txt, plus one Include line in config.txt;
+                           EQs with files also use config\DAC EQ Switcher\<EQ name>\
 
 REMOVING IT
   Untick "Start with Windows", exit from the tray menu, delete the exe and
   %APPDATA%\DacEqSwitcher, and remove the "DAC EQ Switcher" lines from Equalizer APO's config.txt.
 
-CREDITS
+LICENCE AND CREDITS
+  DAC EQ Switcher is free software under the GNU General Public License, version 3 or
+  later (LICENSE.txt). Source code: https://github.com/ZN98/dac-eq-switcher
   Device support, register map and setting names come from toppingctl
   (github.com/gjcourt/toppingctl, Apache-2.0, see toppingctl-LICENSE.txt).
-  Not affiliated with Topping.
+  The response graph follows Equalizer APO's own processing, ported from its source
+  (sourceforge.net/projects/equalizerapo, Jonas Thedering, GPL-2.0-or-later); its
+  expressions follow muParserX (Ingo Berg, BSD-2-Clause).
+  Not affiliated with Topping or the Equalizer APO project.

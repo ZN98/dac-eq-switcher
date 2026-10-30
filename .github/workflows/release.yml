@@ -54,7 +54,7 @@ jobs:
         if: steps.tc.outputs.go == 'true'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q mono-complete
+          sudo apt-get install -y -q mono-complete flac python3-numpy
 
       - name: Build
         if: steps.tc.outputs.go == 'true'
@@ -65,7 +65,7 @@ jobs:
           sh build.sh ../toppingctl "$version" > build.log 2>&1 || { cat build.log; tail -15 build.log | sed 's/^/::error::/'; exit 1; }
           cat build.log
 
-      - name: Check every frame against toppingctl
+      - name: Check every frame against toppingctl, and the EQ engine against Equalizer APO's maths
         if: steps.tc.outputs.go == 'true'
         run: sh ci/check.sh ../toppingctl > check.log 2>&1 || { cat check.log; tail -15 check.log | sed 's/^/::error::/'; exit 1; }; cat check.log
 
@@ -77,7 +77,8 @@ jobs:
           mkdir -p out
           cp build/DacEqSwitcher.exe dist/README.txt out/
           cp ../toppingctl/LICENSE out/toppingctl-LICENSE.txt
-          (cd out && zip -q DacEqSwitcher.zip DacEqSwitcher.exe README.txt toppingctl-LICENSE.txt)
+          cp LICENSE out/LICENSE.txt; cp NOTICE out/NOTICE.txt
+          (cd out && zip -q DacEqSwitcher.zip DacEqSwitcher.exe README.txt LICENSE.txt NOTICE.txt toppingctl-LICENSE.txt)
           {
             echo "Built against toppingctl \`${rev:0:7}\` ($(git -C ../toppingctl log -1 --format=%cs))."
             echo
@@ -88,7 +89,9 @@ jobs:
             fi
             echo "Every command frame was checked byte-for-byte against toppingctl's own builders before release."
             echo
-            echo "Installed copies update themselves (Overview tab or tray menu). New install: download DacEqSwitcher.zip."
+            echo "Installed copies update themselves (Home or tray menu). New install: download DacEqSwitcher.zip."
+            echo
+            echo "Free software under GPL-3.0-or-later; source code is this repository at this release's tag."
           } > notes.md
           gh release create "v$v" out/DacEqSwitcher.exe out/DacEqSwitcher.zip \
             --title "DAC EQ Switcher $v" --notes-file notes.md

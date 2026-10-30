@@ -1,9 +1,25 @@
 DAC EQ Switcher
 Copyright 2026 ZN98
 
-This product includes data and protocol logic derived from toppingctl
-(https://github.com/gjcourt/toppingctl), Copyright George Courtsunis,
-licensed under the Apache License, Version 2.0. src/ToppingTables.g.cs is
-generated from toppingctl's source by tools/gen_tables.py.
+DAC EQ Switcher is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version. See LICENSE.
+Source code: https://github.com/ZN98/dac-eq-switcher
 
-Not affiliated with or endorsed by Topping.
+This product includes:
+
+- Data and protocol logic derived from toppingctl (https://github.com/gjcourt/toppingctl),
+  Copyright George Courtsunis, licensed under the Apache License, Version 2.0 (compatible
+  with GPL-3.0). src/ToppingTables.g.cs is generated from toppingctl's source by
+  tools/gen_tables.py.
+
+- An implementation of Equalizer APO's configuration processing and filters
+  (src/ApoEngine.cs) ported from Equalizer APO (https://sourceforge.net/projects/equalizerapo/),
+  Copyright (C) 2013 Jonas Thedering, licensed under the GNU General Public License,
+  version 2 or (at your option) any later version; used here under version 3.
+
+- An expression evaluator (src/ApoExpr.cs) that follows the operators and functions of
+  muParserX (https://github.com/beltoforion/muparserx), Copyright (c) Ingo Berg,
+  BSD 2-Clause License, as extended by Equalizer APO.
+
+Not affiliated with or endorsed by Topping or the Equalizer APO project.

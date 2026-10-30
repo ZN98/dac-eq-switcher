@@ -294,12 +294,14 @@ namespace DacEqSwitcher
         void RefreshGraph()
         {
             string profile = Core.EqOn ? Core.ActiveProfile : null;
-            string key = profile;
+            Core.RefreshSampleRate();
+            string key = profile + "|" + EqText.DeviceSampleRate;
             if (key == graphKey) return;
             graphKey = key;
             string text = "";
             try { if (!string.IsNullOrEmpty(profile)) text = Core.Profiles.Read(profile); } catch { }
-            graph.Data = EqText.Analyse(text);
+            try { graph.Data = EqText.Analyse(text, 300, 20, 20000, Core.BaseDirFor(profile)); }
+            catch { graph.Data = null; }
         }
 
         void RefreshRules()

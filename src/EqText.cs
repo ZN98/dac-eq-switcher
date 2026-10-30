@@ -17,13 +17,15 @@ namespace DacEqSwitcher
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-        static readonly HashSet<string> Commands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        /// Every command Equalizer APO reads. It matches them case-sensitively; "Filter" is a prefix
+        /// ("Filter 1:", "Filter1:").
+        public static readonly string[] Commands =
         {
-            "preamp", "filter", "channel", "graphiceq", "copy", "delay", "convolution", "stage", "include",
-            "device", "eval", "if", "elseif", "else", "endif", "loudnesscorrection",
+            "Preamp", "Filter", "Channel", "GraphicEQ", "Copy", "Delay", "Convolution", "Stage", "Include",
+            "Device", "Eval", "If", "ElseIf", "Else", "EndIf", "VSTPlugin", "LoudnessCorrection",
         };
 
-        static readonly Regex CommandRe = new Regex(@"^\s*([A-Za-z]+)(\s*\d+)?\s*:", RegexOptions.Compiled);
+        static readonly Regex CommandRe = new Regex(@"^\s*([A-Za-z]+)([^:]*):", RegexOptions.Compiled);
 
         public static string Decode(byte[] data)
         {
@@ -59,15 +61,28 @@ namespace DacEqSwitcher
                 string s = raw.Trim();
                 if (s.Length == 0 || s.StartsWith("#")) { o.AppendLine(raw); continue; }
                 string cmd = CommandOf(s);
-                if (cmd == null) { o.AppendLine("# " + raw); continue; }
-                if (cmd == "device")
+                if (cmd == null)
+                {
+                    // the right command in the wrong case would be ignored by Equalizer APO: fix it
+                    var m = CommandRe.Match(raw);
+                    string fixedName = m.Success ? Commands.FirstOrDefault(c => string.Equals(c, m.Groups[1].Value, StringComparison.OrdinalIgnoreCase)) : null;
+                    if (fixedName != null && (fixedName == "Filter" || m.Groups[2].Value.Trim().Length == 0))
+                    {
+                        string line = raw.Substring(0, m.Groups[1].Index) + fixedName + raw.Substring(m.Groups[1].Index + m.Groups[1].Length);
+                        AddNote(notes, "Command names were corrected to Equalizer APO's spelling (it ignores e.g. \"preamp:\" in lower case).");
+                        o.AppendLine(line);
+                        commands++;
+                        continue;
+                    }
+                    o.AppendLine("# " + raw);
+                    continue;
+                }
+                if (cmd == "Device")
                 {
                     o.AppendLine("# " + raw);
                     AddNote(notes, "A 'Device:' line was commented out: the app decides when this EQ applies.");
                     continue;
                 }
-                if (cmd == "include")
-                    AddNote(notes, "This EQ includes another file. That file must exist in the Equalizer APO config folder.");
                 commands++;
                 o.AppendLine(raw);
             }
@@ -81,12 +96,14 @@ namespace DacEqSwitcher
             if (notes != null && !notes.Contains(n)) notes.Add(n);
         }
 
+        /// The Equalizer APO command on this line, or null if it would ignore the line.
         public static string CommandOf(string line)
         {
-            var m = CommandRe.Match(line);
-            if (!m.Success) return null;
-            string c = m.Groups[1].Value.ToLowerInvariant();
-            return Commands.Contains(c) ? c : null;
+            int colon = line.IndexOf(':');
+            if (colon < 0) return null;
+            string key = line.Substring(0, colon).Trim();
+            if (key.StartsWith("Filter", StringComparison.Ordinal)) return "Filter";
+            return Commands.Contains(key) ? key : null;
         }
 
         public static IEnumerable<string> SplitLines(string text)
@@ -209,142 +226,27 @@ namespace DacEqSwitcher
         // ---------------------------------------------------------- response --
         public sealed class Response
         {
-            public double[] Freqs, L, R;
-            public double PeakDb, PeakHz;
+            public double[] Freqs, L, R, Worst;
+            public double PeakDb, PeakHz, SampleRate;
             public int Skipped;
             public bool Identical;
+            public List<string> Notes = new List<string>();
         }
 
-        const double Fs = 48000;
-        static readonly Regex FilterRe = new Regex(
-            @"^Filter\s*\d*\s*:\s*ON\s+(\w+)\s+Fc\s+([\d.]+)\s*Hz(?:\s+Gain\s+(-?[\d.]+)\s*dB)?(?:\s+Q\s+([\d.]+))?",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        static readonly Regex DbRe = new Regex(@"(-?[\d.]+)\s*dB", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        /// The sample rate the DAC runs at (Windows' shared-mode format); 48 kHz until it's known.
+        public static double DeviceSampleRate = 48000;
 
-        public static Response Analyse(string text, int points = 200, double lo = 20, double hi = 20000)
+        /// Frequency response as Equalizer APO applies it (see ApoEngine). baseDir: where relative
+        /// Include/Convolution paths start (null: the Equalizer APO config folder).
+        public static Response Analyse(string text, int points = 1000, double lo = 20, double hi = 20000, string baseDir = null, double sampleRate = 0)
         {
-            var f = new double[points];
-            for (int i = 0; i < points; i++) f[i] = lo * Math.Pow(hi / lo, i / (double)(points - 1));
-            var L = new double[points];
-            var R = new double[points];
-            bool toL = true, toR = true;
-            int skipped = 0;
-            foreach (var raw in SplitLines(text))
+            return ApoEngine.Analyse(text ?? "", new ApoEngine.Options
             {
-                string s = raw.Trim();
-                if (s.Length == 0 || s.StartsWith("#")) continue;
-                string low = s.ToLowerInvariant();
-                if (low.StartsWith("channel:"))
-                {
-                    var names = s.Substring(8).Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                    bool all = names.Any(n => n.Equals("all", StringComparison.OrdinalIgnoreCase));
-                    toL = all || names.Any(n => n == "L" || n == "1");
-                    toR = all || names.Any(n => n == "R" || n == "2");
-                    continue;
-                }
-                if (low.StartsWith("preamp:"))
-                {
-                    var m = DbRe.Match(s);
-                    if (m.Success) Add(L, R, toL, toR, i => ParseD(m.Groups[1].Value), points);
-                    continue;
-                }
-                if (low.StartsWith("graphiceq:"))
-                {
-                    var pts = GraphicPoints(s.Substring(10));
-                    if (pts.Count == 0) { skipped++; continue; }
-                    Add(L, R, toL, toR, i => Graphic(pts, f[i]), points);
-                    continue;
-                }
-                var fm = FilterRe.Match(s);
-                if (fm.Success)
-                {
-                    double[] c = Biquad(fm.Groups[1].Value.ToUpperInvariant(), ParseD(fm.Groups[2].Value),
-                        fm.Groups[3].Success ? ParseD(fm.Groups[3].Value) : 0, fm.Groups[4].Success ? ParseD(fm.Groups[4].Value) : 0.7071);
-                    if (c == null) { skipped++; continue; }
-                    Add(L, R, toL, toR, i => MagDb(c, f[i]), points);
-                }
-                else if (Regex.IsMatch(low, @"^(filter\s*\d*|convolution|include)\s*:") && !low.Contains(" off"))
-                    skipped++;
-            }
-            var res = new Response { Freqs = f, L = L, R = R, Skipped = skipped, Identical = true };
-            res.PeakDb = double.MinValue;
-            for (int i = 0; i < points; i++)
-            {
-                if (Math.Abs(L[i] - R[i]) > 0.01) res.Identical = false;
-                double m = Math.Max(L[i], R[i]);
-                if (m > res.PeakDb) { res.PeakDb = m; res.PeakHz = f[i]; }
-            }
-            return res;
+                Points = points, Lo = lo, Hi = hi, BaseDir = baseDir ?? DefaultBaseDir,
+                SampleRate = sampleRate > 0 ? sampleRate : DeviceSampleRate,
+            });
         }
 
-        static List<KeyValuePair<double, double>> GraphicPoints(string body)
-        {
-            var pts = new List<KeyValuePair<double, double>>();
-            foreach (var part in body.Split(';'))
-            {
-                var t = part.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                double fr, g;
-                if (t.Length == 2 && double.TryParse(t[0], NumberStyles.Float, Inv, out fr) && double.TryParse(t[1], NumberStyles.Float, Inv, out g) && fr > 0)
-                    pts.Add(new KeyValuePair<double, double>(fr, g));
-            }
-            return pts.OrderBy(p => p.Key).ToList();
-        }
-
-        /// Equalizer APO's GraphicEQ: linear in dB between points on a log-frequency axis.
-        static double Graphic(List<KeyValuePair<double, double>> pts, double f)
-        {
-            if (f <= pts[0].Key) return pts[0].Value;
-            for (int i = 1; i < pts.Count; i++)
-                if (f <= pts[i].Key)
-                {
-                    double t = Math.Log(f / pts[i - 1].Key) / Math.Log(pts[i].Key / pts[i - 1].Key);
-                    return pts[i - 1].Value + t * (pts[i].Value - pts[i - 1].Value);
-                }
-            return pts[pts.Count - 1].Value;
-        }
-
-        static void Add(double[] L, double[] R, bool toL, bool toR, Func<int, double> d, int n)
-        {
-            for (int i = 0; i < n; i++)
-            {
-                double v = d(i);
-                if (toL) L[i] += v;
-                if (toR) R[i] += v;
-            }
-        }
-
-        static double[] Biquad(string kind, double fc, double gain, double q)
-        {
-            double A = Math.Pow(10, gain / 40), w0 = 2 * Math.PI * fc / Fs;
-            if (!(w0 > 0 && w0 < Math.PI) || q <= 0) return null;
-            double c = Math.Cos(w0), s = Math.Sin(w0), al = s / (2 * q), k = 2 * Math.Sqrt(A) * al;
-            switch (kind)
-            {
-                case "PK": case "PEQ": case "MODAL":
-                    return new[] { 1 + al * A, -2 * c, 1 - al * A, 1 + al / A, -2 * c, 1 - al / A };
-                case "LS": case "LSC":
-                    return new[] { A * ((A + 1) - (A - 1) * c + k), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - k),
-                                   (A + 1) + (A - 1) * c + k, -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - k };
-                case "HS": case "HSC":
-                    return new[] { A * ((A + 1) + (A - 1) * c + k), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - k),
-                                   (A + 1) - (A - 1) * c + k, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - k };
-                case "LP": case "LPQ":
-                    return new[] { (1 - c) / 2, 1 - c, (1 - c) / 2, 1 + al, -2 * c, 1 - al };
-                case "HP": case "HPQ":
-                    return new[] { (1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + al, -2 * c, 1 - al };
-                default:
-                    return null;
-            }
-        }
-
-        static double MagDb(double[] c, double f)
-        {
-            double w = 2 * Math.PI * f / Fs;
-            double cr = Math.Cos(w), ci = -Math.Sin(w), c2r = Math.Cos(2 * w), c2i = -Math.Sin(2 * w);
-            double nr = c[0] + c[1] * cr + c[2] * c2r, ni = c[1] * ci + c[2] * c2i;
-            double dr = c[3] + c[4] * cr + c[5] * c2r, di = c[4] * ci + c[5] * c2i;
-            double mag = Math.Sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
-            return 20 * Math.Log10(Math.Max(mag, 1e-12));
-        }
+        public static string DefaultBaseDir = "";
     }
 }

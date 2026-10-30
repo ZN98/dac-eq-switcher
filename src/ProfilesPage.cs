@@ -14,7 +14,11 @@ namespace DacEqSwitcher
         readonly TextBox editor;
         readonly ResponseGraph graph;
         readonly Label info, empty;
-        readonly Btn btnSave, btnRename, btnDelete;
+        readonly Btn btnSave, btnRename, btnDelete, btnFiles;
+        readonly Dropdown ddRate;
+        readonly ToolTip tip = new ToolTip { AutoPopDelay = 30000 };
+        static readonly int[] Rates = { 0, 44100, 48000, 88200, 96000, 176400, 192000 };
+        int rateIndex;
         readonly Timer analyseTimer = new Timer { Interval = 300 };
         string editing;
         bool dirty, loading;
@@ -53,9 +57,10 @@ namespace DacEqSwitcher
             grid.Controls.Add(listCard, 0, 1);
 
             // editor
-            var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
+            var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
             right.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
             right.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
             var edCard = new Card { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12), Padding = new Padding(14, 12, 6, 12) };
             editor = new TextBox
@@ -67,7 +72,7 @@ namespace DacEqSwitcher
             try { var c = new Font("Consolas", 10f); if (c.Name == "Consolas") editor.Font = c; } catch { }
             editor.HandleCreated += (s, e) => Theme.DarkScrollBars(editor);
             editor.TextChanged += (s, e) => { if (loading) return; SetDirty(true); analyseTimer.Stop(); analyseTimer.Start(); };
-            empty = Ui.Text("No EQ profiles yet. Click New, or Import a Peace (.peace), Equalizer APO, AutoEQ or REW (.txt) file.", Theme.Body, Theme.Muted);
+            empty = Ui.Text("No EQ profiles yet. Click New, or Import a Peace (.peace), Equalizer APO, AutoEQ or REW (.txt) file, or an impulse response (.wav, .flac …) for convolution.", Theme.Body, Theme.Muted);
             empty.Dock = DockStyle.Fill;
             empty.AutoSize = false;
             edCard.Controls.Add(editor);
@@ -79,24 +84,37 @@ namespace DacEqSwitcher
             graphCard.Controls.Add(graph);
             right.Controls.Add(graphCard, 0, 1);
 
-            var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0) };
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 6, RowCount = 1, Margin = new Padding(0) };
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            for (int i = 0; i < 3; i++) bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            for (int i = 0; i < 4; i++) bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            ddRate = new Dropdown { Width = 168, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 12, 0) };
+            ddRate.Committed += i => { rateIndex = i; Analyse(); };
+            tip.SetToolTip(ddRate, "The sample rate the graph and clipping check use. Equalizer APO works at the rate Windows runs your DAC at.");
             info = Ui.Text("", Theme.Small, Theme.Muted);
-            info.Anchor = AnchorStyles.Left;
+            info.AutoSize = false;          // one line under the graph; the full text is in the tooltip
+            info.Dock = DockStyle.Fill;
+            info.Height = TextRenderer.MeasureText("Ag", Theme.Small).Height + 4;
+            info.Margin = new Padding(4, 0, 0, 8);
+            info.TextAlign = ContentAlignment.MiddleLeft;
             info.AutoEllipsis = true;
+            btnFiles = new Btn("Files");
             btnRename = new Btn("Rename");
             btnDelete = new Btn("Delete");
             btnSave = new Btn("Save", Btn.Kinds.Accent);
-            foreach (var b in new[] { btnRename, btnDelete, btnSave }) { b.Width = Math.Max(90, b.GetPreferredSize(Size.Empty).Width); b.Margin = new Padding(8, 0, 0, 0); b.Anchor = AnchorStyles.Right; }
+            foreach (var b in new[] { btnFiles, btnRename, btnDelete, btnSave }) { b.Width = Math.Max(90, b.GetPreferredSize(Size.Empty).Width); b.Margin = new Padding(8, 0, 0, 0); b.Anchor = AnchorStyles.Right; }
+            btnFiles.Click += (s, e) => FilesMenu();
+            tip.SetToolTip(btnFiles, "Impulse responses (Convolution) and other files (Include) this EQ uses");
             btnRename.Click += (s, e) => Rename();
             btnDelete.Click += (s, e) => Delete();
             btnSave.Click += (s, e) => Save();
-            bottom.Controls.Add(info, 0, 0);
-            bottom.Controls.Add(btnRename, 1, 0);
-            bottom.Controls.Add(btnDelete, 2, 0);
-            bottom.Controls.Add(btnSave, 3, 0);
-            right.Controls.Add(bottom, 0, 2);
+            bottom.Controls.Add(ddRate, 0, 0);
+            right.Controls.Add(info, 0, 2);
+            bottom.Controls.Add(btnFiles, 2, 0);
+            bottom.Controls.Add(btnRename, 3, 0);
+            bottom.Controls.Add(btnDelete, 4, 0);
+            bottom.Controls.Add(btnSave, 5, 0);
+            right.Controls.Add(bottom, 0, 3);
             grid.Controls.Add(right, 1, 1);
             Controls.Add(grid);
 
@@ -128,7 +146,22 @@ namespace DacEqSwitcher
 
         public override void RefreshState() { list.Invalidate(); }
 
-        public override void Shown() { Reload(editing); }
+        public override void Shown()
+        {
+            Core.RefreshSampleRate();
+            Reload(editing);
+        }
+
+        double Rate { get { return rateIndex <= 0 ? EqText.DeviceSampleRate : Rates[rateIndex]; } }
+
+        void FillRates()
+        {
+            string dev = (EqText.DeviceSampleRate / 1000).ToString("0.###") + " kHz";
+            var items = new List<string> { dev + (Core.SampleRateKnown ? " · your DAC" : " · assumed") };
+            items.AddRange(Rates.Skip(1).Select(r => (r / 1000.0).ToString("0.###") + " kHz"));
+            ddRate.SetItems(items);
+            ddRate.SelectedIndex = rateIndex;
+        }
 
         public void Select(string name)
         {
@@ -167,7 +200,8 @@ namespace DacEqSwitcher
             bool has = name != null;
             editor.Visible = has;
             empty.Visible = !has;
-            btnRename.Enabled = btnDelete.Enabled = has;
+            btnRename.Enabled = btnDelete.Enabled = btnFiles.Enabled = has;
+            ddRate.Visible = has;
             loading = true;
             editor.Text = text ?? "";
             loading = false;
@@ -185,17 +219,96 @@ namespace DacEqSwitcher
         void Analyse()
         {
             if (editing == null) { graph.Data = null; info.Text = ""; return; }
-            var r = EqText.Analyse(editor.Text);
+            FillRates();
+            EqText.Response r;
+            try { r = EqText.Analyse(editor.Text, 1000, 20, 20000, Core.BaseDirFor(editing), Rate); }
+            catch (Exception ex) { graph.Data = null; info.Text = "Couldn't draw this EQ: " + ex.Message; info.ForeColor = Theme.Warn; return; }
             graph.Data = r;
             var parts = new List<string>();
+            var details = new List<string>();
             Color c = Theme.Muted;
-            if (r.PeakDb > 0.05) { parts.Add("May clip: lower the Preamp by " + r.PeakDb.ToString("0.0") + " dB"); c = Theme.Warn; }
+            if (r.PeakDb > 0.05) { parts.Add("May clip: lower the Preamp by " + Math.Ceiling(r.PeakDb * 10) / 10 + " dB"); c = Theme.Warn; }
             var bad = EqText.UnknownLines(editor.Text);
-            if (bad.Count > 0) { parts.Add("Line " + string.Join(", ", bad.Take(5)) + (bad.Count > 5 ? "…" : "") + " isn't understood by Equalizer APO"); c = Theme.Warn; }
-            if (r.Skipped > 0) parts.Add(r.Skipped + " line(s) not drawn");
+            if (bad.Count > 0)
+            {
+                parts.Add("Line " + string.Join(", ", bad.Take(5)) + (bad.Count > 5 ? "…" : "") + " isn't understood by Equalizer APO");
+                details.Add("Equalizer APO ignores lines it doesn't recognise. Command names are case-sensitive (Preamp, Filter, GraphicEQ, Convolution …).");
+                c = Theme.Warn;
+            }
+            if (r.Notes.Count > 0)
+            {
+                parts.Add(r.Notes.Count == 1 ? r.Notes[0] : r.Notes.Count + " notes (hover)");
+                details.AddRange(r.Notes);
+                if (r.Notes.Any(n => n.Contains("skips it") || n.Contains("wasn't found") || n.Contains("ignores"))) c = Theme.Warn;
+            }
             if (!r.Identical) parts.Add("Purple = left, blue = right");
+            var files = Core.Profiles.Files(editing);
+            if (files.Count > 0) details.Add("Files: " + string.Join(", ", files));
             info.Text = string.Join("  ·  ", parts);
             info.ForeColor = c;
+            tip.SetToolTip(info, string.Join("\n", parts.Concat(details).Distinct()));
+        }
+
+        void FilesMenu()
+        {
+            if (editing == null) return;
+            var m = Theme.Menu();
+            var files = Core.Profiles.Files(editing);
+            m.Items.Add("Add file…", null, (s, e) => AddFiles());
+            if (files.Count > 0)
+            {
+                m.Items.Add(new ToolStripSeparator());
+                foreach (var f in files)
+                {
+                    string file = f;
+                    var item = new ToolStripMenuItem(file);
+                    item.DropDown = Theme.Menu();
+                    item.DropDownItems.Add("Insert in the EQ", null, (s, e) => InsertLine(file));
+                    item.DropDownItems.Add("Remove", null, (s, e) =>
+                    {
+                        if (MessageBox.Show(FindForm(), "Remove “" + file + "” from this EQ?", Program.Name, MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+                        try { Core.Profiles.RemoveFile(editing, file); } catch (Exception ex) { Shell.Error(ex.Message); return; }
+                        if (editing == Core.ActiveProfile) Core.Changed();
+                        Analyse();
+                    });
+                    m.Items.Add(item);
+                }
+            }
+            m.Show(btnFiles, new Point(0, btnFiles.Height));
+        }
+
+        void AddFiles()
+        {
+            using (var dlg = new OpenFileDialog
+            {
+                Title = "Add files to “" + editing + "”", Multiselect = true,
+                Filter = "Impulse responses (*.wav;*.flac;*.ogg;*.aiff;*.w64;*.caf)|*.wav;*.flac;*.ogg;*.oga;*.aif;*.aiff;*.w64;*.rf64;*.caf|Equalizer APO files (*.txt)|*.txt|All files (*.*)|*.*",
+            })
+            {
+                if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+                foreach (var f in dlg.FileNames)
+                {
+                    try { InsertLine(Core.Profiles.AddFile(editing, f)); }
+                    catch (Exception ex) { Shell.Error(Path.GetFileName(f) + ": " + ex.Message); }
+                }
+                if (editing == Core.ActiveProfile && !dirty) Core.Changed();
+            }
+        }
+
+        /// Adds "Convolution: file" (audio) or "Include: file" (text) on a new line at the caret.
+        void InsertLine(string file)
+        {
+            string line = (AudioFile.IsAudio(file) ? "Convolution: " : "Include: ") + file;
+            int at = editor.SelectionStart;
+            string t = editor.Text;
+            int lineStart = at > 0 ? t.LastIndexOf('\n', Math.Max(0, at - 1)) + 1 : 0;
+            int lineEnd = t.IndexOf('\n', at); if (lineEnd < 0) lineEnd = t.Length;
+            bool emptyLine = t.Substring(lineStart, lineEnd - lineStart).Trim().Length == 0;
+            string insert = emptyLine ? line : "\r\n" + line;
+            int pos = emptyLine ? lineStart : lineEnd;
+            editor.Text = t.Substring(0, pos) + insert + t.Substring(pos);
+            editor.SelectionStart = pos + insert.Length;
+            editor.Focus();
         }
 
         public override bool CanLeave()
@@ -235,7 +348,7 @@ namespace DacEqSwitcher
             using (var dlg = new OpenFileDialog
             {
                 Title = "Import EQ", Multiselect = true,
-                Filter = "EQ files (*.peace;*.txt;*.cfg)|*.peace;*.txt;*.cfg|All files (*.*)|*.*",
+                Filter = "EQ files and impulse responses|*.peace;*.txt;*.cfg;*.wav;*.flac;*.ogg;*.oga;*.aif;*.aiff;*.w64;*.rf64;*.caf|All files (*.*)|*.*",
             })
             {
                 if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
@@ -246,9 +359,7 @@ namespace DacEqSwitcher
                 {
                     try
                     {
-                        string text = EqText.Import(file, File.ReadAllBytes(file), notes);
-                        last = Core.Profiles.UniqueName(Path.GetFileNameWithoutExtension(file));
-                        Core.Profiles.Save(last, text);
+                        last = Core.Profiles.Import(file, notes);
                     }
                     catch (ImportException ex) { problems.Add(Path.GetFileName(file) + ": " + ex.Message); }
                     catch (IOException ex) { problems.Add(Path.GetFileName(file) + ": " + ex.Message); }
@@ -270,6 +381,7 @@ namespace DacEqSwitcher
             if (Core.Profiles.Exists(to)) { Shell.Error("An EQ called “" + to + "” already exists."); return; }
             string from = editing;
             try { Core.Profiles.Rename(from, to); } catch (Exception ex) { Shell.Error(ex.Message); return; }
+            Core.Eapo.RemoveSynced(from);
             foreach (var r in Core.Settings.Rules) if (r.Profile == from) r.Profile = to;
             if (Core.Settings.DefaultProfile == from) Core.Settings.DefaultProfile = to;
             Core.SaveSettings();
@@ -284,6 +396,7 @@ namespace DacEqSwitcher
             string msg = "Delete the EQ “" + editing + "”?" + (uses > 0 ? "\n\nRules that use it will switch to No EQ." : "");
             if (MessageBox.Show(FindForm(), msg, Program.Name, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
             try { Core.Profiles.Delete(editing); } catch (Exception ex) { Shell.Error(ex.Message); return; }
+            Core.Eapo.RemoveSynced(editing);
             foreach (var r in Core.Settings.Rules) if (r.Profile == editing) r.Profile = "";
             if (Core.Settings.DefaultProfile == editing) Core.Settings.DefaultProfile = "";
             Core.SaveSettings();

@@ -74,7 +74,9 @@ namespace DacEqSwitcher
             var about = Section("About");
             var a = Ui.Text("DAC EQ Switcher " + Updater.Current + "\n" +
                             "DAC support from toppingctl (rev " + ToppingTables.Revision + ", Apache-2.0)\n" +
-                            "Not affiliated with Topping", Theme.Body, Theme.Muted);
+                            "Graph follows Equalizer APO's processing (GPL-2.0-or-later, Jonas Thedering)\n" +
+                            "Free software under GPL-3.0-or-later · github.com/ZN98/dac-eq-switcher\n" +
+                            "Not affiliated with Topping or the Equalizer APO project", Theme.Body, Theme.Muted);
             about.Controls.Add(a);
 
             scroll.Controls.Add(col);

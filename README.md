@@ -8,7 +8,11 @@ A small Windows tray app for Topping DACs that:
 - **replaces the Topping web app**: every DAC setting [toppingctl](https://github.com/gjcourt/toppingctl)
   can change is in the app;
 - has a one-click **EQ on/off** switch (Home, tray menu, or middle-click the tray icon);
-- lets you import, type or paste EQs (Peace, Equalizer APO, AutoEQ, REW) with a live response graph.
+- lets you import, type or paste EQs (Peace, Equalizer APO, AutoEQ, REW, convolution impulse
+  responses) with a live response graph. Every Equalizer APO command works, and the graph and
+  clipping check follow Equalizer APO's own maths (ported from its source and tested against an
+  independent implementation): all filter types, GraphicEQ's FIR, Convolution, Delay, Copy,
+  channels, Include, Stage and If/Eval expressions, at the sample rate your DAC runs at.
 
 Supported: the models toppingctl can read, currently the **Topping DX1 II** and **DX5 II**.
 
@@ -51,5 +55,6 @@ APO's file when the EQ actually changes.
 
 ## Licence
 
-Apache-2.0. Includes data and logic derived from toppingctl (Apache-2.0); see `NOTICE`.
-Not affiliated with Topping.
+GPL-3.0-or-later (see `LICENSE`). The Equalizer APO engine is ported from Equalizer APO
+(GPL-2.0-or-later, Jonas Thedering); DAC support is derived from toppingctl (Apache-2.0).
+Details in `NOTICE`. Not affiliated with Topping or the Equalizer APO project.
