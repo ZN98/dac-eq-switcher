@@ -65,6 +65,18 @@ EQUALIZER APO COMMANDS
     - Equalizer APO's command names are case-sensitive ("preamp:" is ignored); importing
       corrects them, and the editor flags lines Equalizer APO won't read.
 
+IF THE EQ STOPS AFTER RECONNECTING THE DAC
+  Equalizer APO is installed on a Windows playback device, not on the DAC itself. When
+  the DAC reconnects as a new device (another USB port, a driver or Windows update),
+  the new device has no Equalizer APO, so the EQ stops. The app notices within seconds:
+    - By default it puts Equalizer APO back by itself, copying exactly how it was set up
+      on the DAC's earlier device, then restarts Windows Audio. Windows asks for
+      administrator permission each time (Settings > Equalizer APO to turn this off).
+    - Otherwise Home shows "Equalizer APO isn't on ..." with a Fix button.
+    - If there's nothing to copy (Equalizer APO was never installed on this DAC), it opens
+      Equalizer APO's Device Selector: tick the DAC, click OK, restart if asked.
+  Using the same USB port every time usually keeps Windows from making a new device.
+
 GOOD TO KNOW
   - EQ on/off: the EQ switch on Home, "EQ on" in the tray menu, or
     middle-click the tray icon. Off bypasses Equalizer APO's EQ (the tray icon becomes

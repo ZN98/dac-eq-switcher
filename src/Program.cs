@@ -38,6 +38,8 @@ namespace DacEqSwitcher
         {
             if (args.Length == 3 && args[0] == "--eapo-setup")
                 return Eapo.RunElevatedSetup(args[1], args[2]);
+            if (args.Length == 4 && args[0] == "--eapo-repair")
+                return Eapo.RunElevatedRepair(args[1], args[2], args[3]);
 
             bool first;
             var mutex = new Mutex(true, @"Local\DacEqSwitcher.Instance", out first);

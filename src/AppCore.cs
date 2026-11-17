@@ -38,6 +38,7 @@ namespace DacEqSwitcher
         [DataMember] public bool EqOff;               // master switch; default (false) = EQ on
         [DataMember] public string LastProfile;       // last EQ the rules picked, used until the DAC is seen
         [DataMember] public bool MuteOptical;               // DX1 II mute also mutes the optical output
+        [DataMember] public bool NoAutoApoRepair;           // default (false): put Equalizer APO back on a reconnected DAC
 
         void Fix()
         {
@@ -354,6 +355,19 @@ namespace DacEqSwitcher
             Monitor.Changed += OnMonitor;
             EqText.DefaultBaseDir = Eapo.ConfigDir;
             RefreshSampleRate(true);
+        }
+
+        // ------------------------------------------------- Equalizer APO on the DAC --
+        /// Whether Windows' current playback device for the DAC has Equalizer APO (null: unknown).
+        public ApoDevices.Status ApoDevice { get; private set; }
+        DateTime apoChecked;
+
+        public void CheckApoDevice(bool now = false)
+        {
+            if (!Native.OnWindows && Environment.GetEnvironmentVariable("DACEQ_TEST_HKLM") == null) return;
+            if (!now && (DateTime.UtcNow - apoChecked).TotalSeconds < 2) return;
+            apoChecked = DateTime.UtcNow;
+            ApoDevice = ApoDevices.Check(Monitor.Model != null ? Monitor.Model.Name : Settings.LastModel);
         }
 
         // ---------------------------------------------------------- sample rate --

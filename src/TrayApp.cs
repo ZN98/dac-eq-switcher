@@ -17,6 +17,10 @@ namespace DacEqSwitcher
         readonly DeviceChangeWindow deviceWindow;
         MainForm form;
         int queued;
+        readonly System.Windows.Forms.Timer apoTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        int apoTicks;
+        string apoHandled;   // the new device already offered or fixed this session
+        bool repairing;
         string iconKey;
         IntPtr iconHandle;
 
@@ -48,8 +52,16 @@ namespace DacEqSwitcher
             tray.BalloonTipClicked += (s, e) => ShowWindow();
 
             core.StateChanged += Queue;
-            deviceWindow = new DeviceChangeWindow(core.Monitor.Wake);
+            // after a device change Windows takes a moment to set up a new playback device
+            deviceWindow = new DeviceChangeWindow(() => { core.Monitor.Wake(); ui.Post(_ => { apoTicks = 0; apoTimer.Interval = 2000; apoTimer.Start(); }, null); });
+            apoTimer.Tick += (s, e) =>
+            {
+                apoTicks++;
+                if (apoTicks >= 4) apoTimer.Interval = 10000;   // 2, 4, 6, 8 s after a change, then every 10 s
+                CheckApo();
+            };
             core.Start();
+            apoTimer.Start();
             Refresh();
             if (showWindow) ShowWindow();
         }
@@ -62,6 +74,58 @@ namespace DacEqSwitcher
         }
 
         public void PostShow() { ui.Post(_ => ShowWindow(), null); }
+
+        string DacName { get { return core.Monitor.Model != null ? core.Monitor.Model.Name : core.Settings.LastModel ?? "your DAC"; } }
+
+        void CheckApo()
+        {
+            if (repairing) return;
+            core.CheckApoDevice();
+            var st = core.ApoDevice;
+            if (st == null || !st.NeedsFix) { apoHandled = null; return; }
+            if (st.Missing.Guid == apoHandled) return;
+            apoHandled = st.Missing.Guid;
+            Log.Write("Equalizer APO missing on " + st.Missing.Name + " " + st.Missing.Guid + (st.Template != null ? ", earlier device " + st.Template.Guid : ""));
+            if (form != null && !form.IsDisposed) form.RefreshState();
+            if (st.Template != null && !core.Settings.NoAutoApoRepair) RepairApo(true);
+            else
+                tray.ShowBalloonTip(10000, "Equalizer APO isn't on " + DacName,
+                    st.Template != null ? "Windows set the DAC up as a new device after it was reconnected, so the EQ isn't applied. Click to fix it."
+                                        : "Equalizer APO needs to be installed on it for the EQ to work. Click for details.", ToolTipIcon.Warning);
+        }
+
+        /// Puts Equalizer APO back on the DAC (one administrator prompt), or opens Device Selector.
+        public void RepairApo(bool automatic)
+        {
+            core.CheckApoDevice(true);
+            var st = core.ApoDevice;
+            if (st == null || !st.NeedsFix || repairing) return;
+            repairing = true;
+            try
+            {
+                bool useSelector;
+                string err = core.Eapo.RepairDevice(st, out useSelector);
+                core.CheckApoDevice(true);
+                Log.Write("Equalizer APO repair: " + (err ?? "done"));
+                if (err == null)
+                {
+                    tray.ShowBalloonTip(6000, "Equalizer APO is back on " + DacName, "The EQ works again on " + st.Missing.Name + ".", ToolTipIcon.Info);
+                    core.Changed();
+                }
+                else if (useSelector)
+                {
+                    var owner = form != null && !form.IsDisposed && form.Visible ? form : null;
+                    var r = MessageBox.Show(owner, err + "\n\nOpen Equalizer APO's Device Selector now? Tick \"" + st.Missing.Name +
+                        "\", click OK, and restart Windows if it asks.", Program.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    if (r == DialogResult.Yes && !core.Eapo.OpenDeviceSelector())
+                        MessageBox.Show(owner, "Device Selector wasn't found in Equalizer APO's folder. Run it from the Start menu (Equalizer APO > Device Selector).", Program.Name);
+                }
+                else if (!automatic || err != "It needs administrator permission, which was cancelled.")
+                    tray.ShowBalloonTip(10000, "Equalizer APO on " + DacName, err, ToolTipIcon.Warning);
+            }
+            finally { repairing = false; }
+            if (form != null && !form.IsDisposed) form.RefreshState();
+        }
 
         public string ActiveText
         {

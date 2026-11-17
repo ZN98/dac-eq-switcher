@@ -10,7 +10,7 @@ namespace DacEqSwitcher
     sealed class SettingsPage : Page
     {
         readonly TableLayoutPanel col;
-        readonly Switch swStartup, swUpdates, swMuteOpt;
+        readonly Switch swStartup, swUpdates, swMuteOpt, swAutoRepair;
         readonly Label lblEapo, lblUpdate;
         readonly Btn btnEapoFix, btnCheck;
         readonly TableLayoutPanel dacRows;
@@ -69,6 +69,13 @@ namespace DacEqSwitcher
             cfg.Width = cfg.GetPreferredSize(Size.Empty).Width;
             cfg.Click += (s, e) => { try { Core.Eapo.OpenConfigurator(); } catch (Exception ex) { Shell.Error(ex.Message); } };
             AddRow(eapo, lblEapo, Ui.Row(btnEapoFix, Ui.Spacer(8, 1), cfg));
+            swAutoRepair = new Switch();
+            swAutoRepair.Click += (s, e) => { Core.Settings.NoAutoApoRepair = !swAutoRepair.Checked; Core.SaveSettings(); };
+            AddRow(eapo, "Put Equalizer APO back automatically when the DAC reconnects as a new Windows device (asks for permission)", swAutoRepair);
+            var sel = new Btn("Open Device Selector");
+            sel.Width = sel.GetPreferredSize(Size.Empty).Width;
+            sel.Click += (s, e) => { if (!Core.Eapo.OpenDeviceSelector()) Shell.Error("Device Selector wasn't found. Run it from the Start menu (Equalizer APO > Device Selector)."); };
+            AddRow(eapo, Ui.Text("Choose which Windows devices Equalizer APO is installed on", Theme.Body, Theme.Muted), sel);
 
             // about
             var about = Section("About");
@@ -115,6 +122,7 @@ namespace DacEqSwitcher
         {
             swStartup.Checked = Startup.Enabled;
             swUpdates.Checked = !Core.Settings.NoUpdateCheck;
+            swAutoRepair.Checked = !Core.Settings.NoAutoApoRepair;
             var up = Core.Updater.Available;
             lblUpdate.Text = up != null ? "Version " + up.Tag + " is available (you have " + Updater.Current + ")" : "Version " + Updater.Current;
             lblUpdate.ForeColor = up != null ? Theme.Accent : Theme.Muted;

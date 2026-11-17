@@ -252,5 +252,64 @@ namespace DacEqSwitcher
             string exe = Path.Combine(InstallDir, "Configurator.exe");
             if (File.Exists(exe)) Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
         }
+
+        /// Equalizer APO's own tool for choosing the devices it's installed on (asks for admin rights).
+        public bool OpenDeviceSelector()
+        {
+            foreach (var name in new[] { "DeviceSelector.exe", "Configurator.exe" })
+            {
+                string exe = Path.Combine(InstallDir ?? "", name);
+                if (!File.Exists(exe)) continue;
+                try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }); return true; }
+                catch (System.ComponentModel.Win32Exception) { return true; }   // cancelled at the permission prompt
+            }
+            return false;
+        }
+
+        // ------------------------------------------------------- device repair --
+        static readonly System.Text.RegularExpressions.Regex GuidRe = new System.Text.RegularExpressions.Regex(@"^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$");
+
+        /// Puts Equalizer APO on the DAC's new playback device, copying its earlier one. Asks for
+        /// administrator permission. Returns null on success, else what went wrong (and whether
+        /// Equalizer APO's Device Selector should be used instead).
+        public string RepairDevice(ApoDevices.Status st, out bool useDeviceSelector)
+        {
+            useDeviceSelector = false;
+            if (st == null || st.Missing == null) return null;
+            if (st.Template == null) { useDeviceSelector = true; return "Equalizer APO hasn't been installed on this DAC before."; }
+            int code;
+            string log = Path.Combine(Path.GetTempPath(), "daceqswitcher-repair.log");
+            try
+            {
+                if (File.Exists(log)) File.Delete(log);
+                var psi = new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName,
+                    "--eapo-repair " + st.Missing.Guid + " " + st.Template.Guid + " \"" + Paths.Data + "\"")
+                { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
+                using (var p = Process.Start(psi)) { p.WaitForExit(); code = p.ExitCode; }
+            }
+            catch (System.ComponentModel.Win32Exception) { return "It needs administrator permission, which was cancelled."; }
+            string msg = null;
+            try { if (File.Exists(log)) msg = File.ReadAllText(log).Trim(); } catch { }
+            switch (code)
+            {
+                case ApoDevices.Ok: return null;
+                case ApoDevices.RestartFailed: return msg ?? "Restart Windows to finish.";
+                case ApoDevices.NoTemplate: case ApoDevices.AccessDenied:
+                    useDeviceSelector = true;
+                    return "This one needs Equalizer APO's Device Selector" + (msg != null ? " (" + msg + ")" : "") + ".";
+                default: useDeviceSelector = true; return "Couldn't repair it" + (msg != null ? ": " + msg : "") + ".";
+            }
+        }
+
+        /// Runs in the elevated helper process.
+        public static int RunElevatedRepair(string newGuid, string templateGuid, string dataDir)
+        {
+            string log = Path.Combine(Path.GetTempPath(), "daceqswitcher-repair.log");
+            if (!GuidRe.IsMatch(newGuid) || !GuidRe.IsMatch(templateGuid)) return ApoDevices.Failed;
+            string msg;
+            int code = ApoDevices.Repair(newGuid, templateGuid, Path.Combine(dataDir, "Equalizer APO backups"), out msg);
+            try { if (msg != null) File.WriteAllText(log, msg); } catch { }
+            return code;
+        }
     }
 }

@@ -36,4 +36,8 @@ mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/FilesTest.c
 T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data" "$T/src"; touch "$T/eapo/config.txt"
 DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
     timeout 120 mono build/DacEqTest.exe "$T/src" || { echo "files test failed"; fail=1; }
+# Equalizer APO on a reconnected DAC: detection and repair against a stand-in registry
+mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/ApoRepairTest.cs
+T="$(mktemp -d)"
+HOME="$T" timeout 120 mono build/DacEqTest.exe build/DacEqSwitcher.exe || { echo "device repair test failed"; fail=1; }
 exit $fail

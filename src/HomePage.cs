@@ -346,6 +346,14 @@ namespace DacEqSwitcher
             int dacEq;
             if (!st.Installed) { text = "Equalizer APO isn't installed"; action = "Download"; statusAction = () => OpenUrl(Updater.EapoPage); c = Theme.Warn; }
             else if (!st.Writable || !st.Included) { text = "Equalizer APO needs a one-time setup"; action = "Set up"; statusAction = () => { var e = Core.Eapo.Setup(); if (e != null) Shell.Error(e); Core.Changed(); }; c = Theme.Warn; }
+            else if (Core.ApoDevice != null && Core.ApoDevice.NeedsFix)
+            {
+                var d = Core.ApoDevice;
+                text = d.Template != null ? "Equalizer APO isn't on " + d.Missing.Name + " since the DAC was reconnected" : "Equalizer APO isn't installed on " + d.Missing.Name;
+                action = "Fix";
+                statusAction = () => Shell.App.RepairApo(false);
+                c = Theme.Warn;
+            }
             else if (Core.WriteError != null) { text = "Couldn't update Equalizer APO: " + Core.WriteError; c = Theme.Bad; }
             else if (st.OtherLines.Count > 0) { text = "Equalizer APO also applies another EQ"; action = "Turn it off"; statusAction = () => SettingsPage.DisableOthers(Core, Shell); c = Theme.Warn; }
             else if (vals.TryGetValue(Dx1Protocol.DacEq, out dacEq) && dacEq >= 0) { text = "The DAC's own EQ (EQ " + (dacEq + 1) + ") is on and adds to this EQ"; action = "Turn it off"; statusAction = () => SendDacEqOff(); c = Theme.Warn; }
