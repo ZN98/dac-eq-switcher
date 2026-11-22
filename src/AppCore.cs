@@ -38,6 +38,7 @@ namespace DacEqSwitcher
         [DataMember] public bool EqOff;               // master switch; default (false) = EQ on
         [DataMember] public string LastProfile;       // last EQ the rules picked, used until the DAC is seen
         [DataMember] public bool MuteOptical;               // DX1 II mute also mutes the optical output
+        [DataMember] public bool SwapChannels;              // left and right swapped before the EQ
         [DataMember] public bool NoAutoApoRepair;           // default (false): put Equalizer APO back on a reconnected DAC
 
         void Fix()
@@ -485,6 +486,21 @@ namespace DacEqSwitcher
         }
 
         const string OffText = "# DAC EQ Switcher: EQ switched off\r\n";
+
+        /// Swap the music's left and right before the EQ, so the Left/Right EQ stays with the
+        /// physical left/right speaker or earpiece. Independent of the EQ switch.
+        public bool SwapOn { get { return Settings.SwapChannels; } }
+
+        public void SetSwap(bool on)
+        {
+            if (on == SwapOn) return;
+            Settings.SwapChannels = on;
+            SaveSettings();
+            Log.Write(on ? "left/right swapped" : "left/right normal");
+            Changed();
+        }
+
+        public const string SwapText = "# DAC EQ Switcher: left and right swapped (Swap L/R)\r\nChannel: all\r\nCopy: L=R R=L\r\n";
         string writtenKey;   // what the active file holds: "off" or "on:<profile>"
 
         /// Re-picks the EQ. force: rewrite even if the same profile (after it was edited).
@@ -508,7 +524,7 @@ namespace DacEqSwitcher
                     ActiveProfile = Profiles.Exists(Settings.LastProfile) ? Settings.LastProfile : "";
                 // While the DAC is away the last EQ is kept; until one is known there's nothing to apply
                 if (EqOn && ActiveProfile == null) return;
-                string key = EqOn ? "on:" + ActiveProfile : "off";
+                string key = (EqOn ? "on:" + ActiveProfile : "off") + (SwapOn ? "|swap" : "");
                 if (!force && key == writtenKey && WriteError == null) return;
 
                 string text;
@@ -534,6 +550,7 @@ namespace DacEqSwitcher
                     }
                     else text = header + body.TrimEnd() + "\r\nChannel: all\r\n";
                 }
+                if (SwapOn) text = SwapText + text;
                 string err = null;
                 if (force || text != written)
                 {

@@ -11,7 +11,12 @@ namespace DacEqSwitcher
     sealed class ProfilesPage : Page
     {
         readonly ListBox list;
-        readonly TextBox editor;
+        readonly TextBox[] editors = new TextBox[3];   // both channels, left, right
+        readonly Segmented tabs;
+        readonly Label splitNote;
+        int block;
+        TextBox editor { get { return editors[block]; } }
+        List<KeyValuePair<int, int>> lineMap = new List<KeyValuePair<int, int>>();
         readonly ResponseGraph graph;
         readonly Label info, empty;
         readonly Btn btnSave, btnRename, btnDelete, btnFiles;
@@ -62,20 +67,38 @@ namespace DacEqSwitcher
             right.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-            var edCard = new Card { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12), Padding = new Padding(14, 12, 6, 12) };
-            editor = new TextBox
+            var edCard = new Card { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12), Padding = new Padding(14, 10, 6, 12) };
+            Font mono = new Font(FontFamily.GenericMonospace, 10f);
+            try { var c = new Font("Consolas", 10f); if (c.Name == "Consolas") mono = c; } catch { }
+            for (int i = 0; i < 3; i++)
             {
-                Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false, AcceptsTab = true,
-                BorderStyle = BorderStyle.None, BackColor = Theme.Card, ForeColor = Theme.Text, HideSelection = false,
-                Font = new Font(FontFamily.GenericMonospace, 10f),
-            };
-            try { var c = new Font("Consolas", 10f); if (c.Name == "Consolas") editor.Font = c; } catch { }
-            editor.HandleCreated += (s, e) => Theme.DarkScrollBars(editor);
-            editor.TextChanged += (s, e) => { if (loading) return; SetDirty(true); analyseTimer.Stop(); analyseTimer.Start(); };
+                var ed = new TextBox
+                {
+                    Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false, AcceptsTab = true,
+                    BorderStyle = BorderStyle.None, BackColor = Theme.Card, ForeColor = Theme.Text, HideSelection = false,
+                    Font = mono, Visible = i == 0,
+                };
+                ed.HandleCreated += (s, e) => Theme.DarkScrollBars(ed);
+                ed.TextChanged += (s, e) => { if (loading) return; SetDirty(true); UpdateTabs(); analyseTimer.Stop(); analyseTimer.Start(); };
+                editors[i] = ed;
+            }
+            // one block per channel: what's in Left always plays through the left speaker / earpiece
+            tabs = new Segmented(ChannelBlocks.Names) { Dock = DockStyle.Top, Height = 34 };
+            tabs.Committed += i => ShowBlock(i);
+            tip.SetToolTip(tabs, "Both channels: applied to left and right. Left / Right: only that side.\n" +
+                                 "These follow the physical speakers or earpieces, also when Swap L/R is on.");
+            splitNote = Ui.Text("", Theme.Small, Theme.Muted);
+            splitNote.Dock = DockStyle.Top;
+            splitNote.Padding = new Padding(0, 6, 0, 4);
+            splitNote.Visible = false;
+            var gap = new Panel { Dock = DockStyle.Top, Height = 8, BackColor = Theme.Card };
             empty = Ui.Text("No EQ profiles yet. Click New, or Import a Peace (.peace), Equalizer APO, AutoEQ or REW (.txt) file, or an impulse response (.wav, .flac …) for convolution.", Theme.Body, Theme.Muted);
             empty.Dock = DockStyle.Fill;
             empty.AutoSize = false;
-            edCard.Controls.Add(editor);
+            for (int i = 2; i >= 0; i--) edCard.Controls.Add(editors[i]);
+            edCard.Controls.Add(gap);
+            edCard.Controls.Add(splitNote);
+            edCard.Controls.Add(tabs);
             edCard.Controls.Add(empty);
             right.Controls.Add(edCard, 0, 0);
 
@@ -198,16 +221,46 @@ namespace DacEqSwitcher
         {
             editing = name;
             bool has = name != null;
-            editor.Visible = has;
             empty.Visible = !has;
+            tabs.Visible = has;
             btnRename.Enabled = btnDelete.Enabled = btnFiles.Enabled = has;
             ddRate.Visible = has;
+            var split = ChannelBlocks.Separate(text ?? "");
             loading = true;
-            editor.Text = text ?? "";
+            for (int i = 0; i < 3; i++) editors[i].Text = split.Blocks[i];
             loading = false;
+            splitNote.Text = split.Separated ? "" : "This EQ is kept as one block because " + split.Reason + ". Left and Right are added after it.";
+            splitNote.Visible = has && !split.Separated;
+            block = -1;
+            ShowBlock(0);
+            for (int i = 0; i < 3; i++) editors[i].Visible = has && i == block;
             SetDirty(false);
             Analyse();
         }
+
+        void ShowBlock(int i)
+        {
+            if (i == block) return;
+            block = i;
+            for (int k = 0; k < 3; k++) editors[k].Visible = editing != null && k == i;
+            tabs.SelectedIndex = i;
+            UpdateTabs();
+        }
+
+        void UpdateTabs()
+        {
+            tabs.SetItems(Enumerable.Range(0, 3).Select(i =>
+            {
+                int n = EqText.SplitLines(editors[i].Text).Count(l => l.Trim().Length > 0 && !l.TrimStart().StartsWith("#"));
+                return ChannelBlocks.Names[i] + (n > 0 ? "  ·  " + n : "");
+            }));
+            tabs.SelectedIndex = block;
+        }
+
+        /// The Equalizer APO text the three blocks make.
+        string Composed() { return ChannelBlocks.Compose(editors.Select(e => e.Text).ToArray(), out lineMap); }
+
+        static readonly System.Text.RegularExpressions.Regex LineRe = new System.Text.RegularExpressions.Regex(@"^Line (\d+)");
 
         void SetDirty(bool d)
         {
@@ -221,20 +274,22 @@ namespace DacEqSwitcher
             if (editing == null) { graph.Data = null; info.Text = ""; return; }
             FillRates();
             EqText.Response r;
-            try { r = EqText.Analyse(editor.Text, 1000, 20, 20000, Core.BaseDirFor(editing), Rate); }
+            string text = Composed();
+            try { r = EqText.Analyse(text, 1000, 20, 20000, Core.BaseDirFor(editing), Rate); }
             catch (Exception ex) { graph.Data = null; info.Text = "Couldn't draw this EQ: " + ex.Message; info.ForeColor = Theme.Warn; return; }
             graph.Data = r;
             var parts = new List<string>();
             var details = new List<string>();
             Color c = Theme.Muted;
             if (r.PeakDb > 0.05) { parts.Add("May clip: lower the Preamp by " + Math.Ceiling(r.PeakDb * 10) / 10 + " dB"); c = Theme.Warn; }
-            var bad = EqText.UnknownLines(editor.Text);
+            var bad = EqText.UnknownLines(text);
             if (bad.Count > 0)
             {
-                parts.Add("Line " + string.Join(", ", bad.Take(5)) + (bad.Count > 5 ? "…" : "") + " isn't understood by Equalizer APO");
+                parts.Add(string.Join("; ", bad.Take(3).Select(n => ChannelBlocks.Where(lineMap, n))) + (bad.Count > 3 ? "…" : "") + (bad.Count == 1 ? " isn't" : " aren't") + " understood by Equalizer APO");
                 details.Add("Equalizer APO ignores lines it doesn't recognise. Command names are case-sensitive (Preamp, Filter, GraphicEQ, Convolution …).");
                 c = Theme.Warn;
             }
+            r.Notes = r.Notes.Select(n => LineRe.Replace(n, m => ChannelBlocks.Where(lineMap, int.Parse(m.Groups[1].Value)))).ToList();
             if (r.Notes.Count > 0)
             {
                 parts.Add(r.Notes.Count == 1 ? r.Notes[0] : r.Notes.Count + " notes (hover)");
@@ -242,6 +297,7 @@ namespace DacEqSwitcher
                 if (r.Notes.Any(n => n.Contains("skips it") || n.Contains("wasn't found") || n.Contains("ignores"))) c = Theme.Warn;
             }
             if (!r.Identical) parts.Add("Purple = left, blue = right");
+            if (Core.SwapOn) parts.Add("Swap L/R is on: the music is swapped before this EQ, so Left still means your left side");
             var files = Core.Profiles.Files(editing);
             if (files.Count > 0) details.Add("Files: " + string.Join(", ", files));
             info.Text = string.Join("  ·  ", parts);
@@ -323,7 +379,7 @@ namespace DacEqSwitcher
         public void Save()
         {
             if (editing == null || !dirty) return;
-            try { Core.Profiles.Save(editing, editor.Text); }
+            try { Core.Profiles.Save(editing, Composed()); }
             catch (Exception ex) { Shell.Error(ex.Message); return; }
             SetDirty(false);
             if (editing == Core.ActiveProfile) Core.Changed();   // Equalizer APO picks it up now

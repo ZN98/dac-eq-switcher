@@ -6,8 +6,16 @@ using DacEqSwitcher;
 // EQ on/off switch: bypass, rules keep tracking while off, restore, and staying off across restarts.
 static class TT
 {
+    static void WriteRetry(string path, string text)
+    {
+        // the simulated DAC may be reading the file at that moment
+        for (int i = 0; ; i++)
+            try { System.IO.File.WriteAllText(path, text); return; }
+            catch (System.IO.IOException) when (i < 50) { System.Threading.Thread.Sleep(20); }
+    }
+
     static string Active() { return File.ReadAllLines(Path.Combine(Environment.GetEnvironmentVariable("DACEQ_EAPO_CONFIG"), Eapo.ActiveName))[0]; }
-    static void State(string s) { File.WriteAllText(Environment.GetEnvironmentVariable("DACEQ_SIM_STATE"), s.Replace(";", "\n")); }
+    static void State(string s) { WriteRetry(Environment.GetEnvironmentVariable("DACEQ_SIM_STATE"), s.Replace(";", "\n")); }
     static void Wait(AppCore c) { for (int i = 0; i < 50 && !c.Monitor.Connected; i++) Thread.Sleep(100); Thread.Sleep(800); }
     static int fails;
     static void Expect(string what, string got, string want)

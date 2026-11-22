@@ -44,6 +44,15 @@ DAC CONTROLS
   toppingctl marks DX1 II control as tested on one unit, so the app asks once before
   sending anything to a DX1 II.
 
+LEFT, RIGHT AND SWAP L/R
+  Each EQ has three blocks: Both channels, Left and Right (tabs above the editor).
+  Left and Right always mean your left and right speaker or earpiece.
+    - Swap L/R (Home, or the tray menu) swaps the music's left and right channels before
+      the EQ, e.g. for speakers or IEMs placed the other way round. Each side keeps its own
+      EQ. It's one switch for all EQs, remembered, and works with the EQ on or off.
+    - EQs that use Copy, If, Include or other channels than left/right are kept as one
+      block, as splitting them could change what they do.
+
 EQUALIZER APO COMMANDS
   An EQ can use anything Equalizer APO understands: Preamp, Filter (PK/PEQ/Modal, LP/HP,
   LPQ/HPQ, BP, NO, AP, LS/HS, LSC/HSC with Q, BW Oct or slope, LS/HS 6dB/12dB, IIR with

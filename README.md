@@ -9,6 +9,8 @@ A small Windows tray app for Topping DACs that:
   can change is in the app;
 - notices when Windows sets the DAC up as a new device after a reconnect (which drops
   Equalizer APO) and puts Equalizer APO back, copying its earlier installation;
+- edits each EQ as **Both channels / Left / Right** blocks, with a **Swap L/R** switch that swaps
+  the music before the EQ so each side keeps its own EQ;
 - has a one-click **EQ on/off** switch (Home, tray menu, or middle-click the tray icon);
 - lets you import, type or paste EQs (Peace, Equalizer APO, AutoEQ, REW, convolution impulse
   responses) with a live response graph. Every Equalizer APO command works, and the graph and

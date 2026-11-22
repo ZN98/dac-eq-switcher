@@ -40,4 +40,9 @@ DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DAT
 mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/ApoRepairTest.cs
 T="$(mktemp -d)"
 HOME="$T" timeout 120 mono build/DacEqTest.exe build/DacEqSwitcher.exe || { echo "device repair test failed"; fail=1; }
+# Both/Left/Right blocks and Swap L/R
+mcs -nologo -out:build/DacEqTest.exe -r:build/DacEqSwitcher.exe test/ChannelTest.cs
+T="$(mktemp -d)"; mkdir -p "$T/eapo" "$T/data"; touch "$T/eapo/config.txt"
+DACEQ_SIM=dx1 DACEQ_SIM_STATE="$T/sim.txt" DACEQ_EAPO_CONFIG="$T/eapo" DACEQ_DATA="$T/data" HOME="$T" \
+    timeout 120 mono build/DacEqTest.exe || { echo "channels test failed"; fail=1; }
 exit $fail

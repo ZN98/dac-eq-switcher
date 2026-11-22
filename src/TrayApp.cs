@@ -13,7 +13,7 @@ namespace DacEqSwitcher
         readonly AppCore core;
         readonly NotifyIcon tray;
         readonly SynchronizationContext ui;
-        readonly ToolStripMenuItem miActive, miEq, miPause, miStartup, miUpdate;
+        readonly ToolStripMenuItem miActive, miEq, miSwap, miPause, miStartup, miUpdate;
         readonly DeviceChangeWindow deviceWindow;
         MainForm form;
         int queued;
@@ -36,10 +36,11 @@ namespace DacEqSwitcher
             open.Font = new Font(open.Font, FontStyle.Bold);
             miActive = new ToolStripMenuItem("") { Enabled = false };
             miEq = new ToolStripMenuItem("EQ on", null, (s, e) => ToggleEq()) { ShortcutKeyDisplayString = "middle-click" };
+            miSwap = new ToolStripMenuItem("Swap left and right", null, (s, e) => core.SetSwap(!core.SwapOn));
             miPause = new ToolStripMenuItem("Pause (free the DAC for Topping Tune)", null, (s, e) => TogglePause());
             miStartup = new ToolStripMenuItem("Start with Windows", null, (s, e) => SetStartup(!Startup.Enabled));
             miUpdate = new ToolStripMenuItem("", null, (s, e) => InstallUpdate(false)) { Visible = false };
-            menu.Items.AddRange(new ToolStripItem[] { open, miActive, miUpdate, new ToolStripSeparator(), miEq, miPause, miStartup,
+            menu.Items.AddRange(new ToolStripItem[] { open, miActive, miUpdate, new ToolStripSeparator(), miEq, miSwap, miPause, miStartup,
                 new ToolStripSeparator(), new ToolStripMenuItem("Exit", null, (s, e) => Exit()) });
             menu.Opening += (s, e) => miStartup.Checked = Startup.Enabled;
 
@@ -154,6 +155,7 @@ namespace DacEqSwitcher
             tray.Text = tip.Length > 63 ? tip.Substring(0, 62) + "…" : tip;
             miActive.Text = !core.EqOn ? "EQ is off" : m.Connected ? "Active EQ: " + ActiveText : m.Status;
             miEq.Checked = core.EqOn;
+            miSwap.Checked = core.SwapOn;
             miPause.Checked = m.Paused;
             var up = core.Updater.Available;
             miUpdate.Visible = up != null;

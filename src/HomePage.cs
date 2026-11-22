@@ -15,7 +15,7 @@ namespace DacEqSwitcher
         readonly Btn btnPause, btnPower;
         // hero
         readonly Label lblPlayingCaption, lblProfile, lblRule;
-        readonly Switch swEq;
+        readonly Switch swEq, swSwap;
         readonly ResponseGraph graph;
         readonly Btn btnEditEq;
         // rules
@@ -96,10 +96,14 @@ namespace DacEqSwitcher
             names.Controls.Add(lblProfile);
             names.Controls.Add(lblRule);
             top.Controls.Add(names, 0, 0);
-            var switches = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, Margin = new Padding(0, 6, 0, 0) };
+            var switches = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, AutoSize = true, Margin = new Padding(0, 6, 0, 0) };
             swEq = new Switch { AccessibleName = "EQ" };
             swEq.Click += (s, e) => { Core.SetEqOn(swEq.Checked); RefreshState(); };
             AddSwitch(switches, "EQ", swEq, 0);
+            swSwap = new Switch { AccessibleName = "Swap left and right" };
+            swSwap.Click += (s, e) => { Core.SetSwap(swSwap.Checked); RefreshState(); };
+            AddSwitch(switches, "Swap L/R", swSwap, 1);
+            new ToolTip().SetToolTip(swSwap, "Swaps the music's left and right channels before the EQ,\nso each side's EQ stays with its own speaker or earpiece.");
             top.Controls.Add(switches, 1, 0);
             heroGrid.Controls.Add(top, 0, 0);
 
@@ -268,6 +272,7 @@ namespace DacEqSwitcher
 
             // hero
             swEq.Checked = Core.EqOn;
+            swSwap.Checked = Core.SwapOn;
             if (!Core.EqOn)
             {
                 lblProfile.Text = "Off";

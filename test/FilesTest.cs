@@ -12,6 +12,14 @@ using DacEqSwitcher;
 // (byte for byte, resynced when they change), and rename/delete keep everything consistent.
 static class FT
 {
+    static void WriteRetry(string path, string text)
+    {
+        // the simulated DAC may be reading the file at that moment
+        for (int i = 0; ; i++)
+            try { System.IO.File.WriteAllText(path, text); return; }
+            catch (System.IO.IOException) when (i < 50) { System.Threading.Thread.Sleep(20); }
+    }
+
     static int fails;
     static void Check(bool ok, string what) { if (!ok) fails++; Console.WriteLine((ok ? "ok    " : "FAIL  ") + what); }
     static string Cfg { get { return Environment.GetEnvironmentVariable("DACEQ_EAPO_CONFIG"); } }
@@ -39,7 +47,7 @@ static class FT
         File.WriteAllText(Path.Combine(src, "inc.txt"), "Preamp: -1 dB\r\nConvolution: bass.wav\r\n");
         File.WriteAllText(Path.Combine(src, "Room.txt"), "Preamp: -4 dB\r\nfilter: ON PK Fc 100 Hz Gain 3 dB Q 1\r\nConvolution: irs\\room.wav\r\nInclude: inc.txt\r\nConvolution: hp_`sampleRate`.wav\r\nConvolution: missing.wav\r\n");
 
-        File.WriteAllText(Environment.GetEnvironmentVariable("DACEQ_SIM_STATE"), "output=2");
+        WriteRetry(Environment.GetEnvironmentVariable("DACEQ_SIM_STATE"), "output=2");
         var core = new AppCore();
         var notes = new List<string>();
         string name = core.Profiles.Import(Path.Combine(src, "Room.txt"), notes);
@@ -82,7 +90,7 @@ static class FT
         Check(!File.Exists(Path.Combine(synced, "hp_44100.wav")), "a removed file is removed from the config folder too");
 
         // other EQs stay inline, exactly as before
-        File.WriteAllText(Environment.GetEnvironmentVariable("DACEQ_SIM_STATE"), "output=1");
+        WriteRetry(Environment.GetEnvironmentVariable("DACEQ_SIM_STATE"), "output=1");
         Thread.Sleep(1500);
         Check(Active().Contains("Preamp: -2 dB") && !Active().Contains("Include:"), "an EQ without files is written inline as before");
 
